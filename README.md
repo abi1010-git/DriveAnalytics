@@ -64,6 +64,22 @@ cd ..\frontend
 npm.cmd run build
 ```
 
-## Future improvements (Phase 2)
+## Performance Engineering
 
-PySpark processing, PostgreSQL query optimization, honest performance benchmarking, a configurable YAML safety-rule engine, richer telemetry charts in the event panel, and Dockerized deployment.
+Phase 2 includes PostgreSQL support, configurable batch generation, and a reproducible SQL benchmark. The measured benchmark dataset contains 100 vehicles, 1,000,000 synthetic telemetry records, and 62,792 synthetic safety events in local PostgreSQL 17. The tested queries cover vehicle telemetry ranges, telemetry surrounding an event, event aggregation by time range, and aggregation by vehicle and route. The measured optimization is a composite `(vehicle_id, timestamp)` telemetry index selected from `EXPLAIN ANALYZE` for the nearby-telemetry lookup.
+
+Run the benchmark with PostgreSQL credentials supplied through the environment or a local PostgreSQL password file:
+
+```powershell
+cd safedrive/backend
+$env:DATABASE_URL = "postgresql+psycopg2://postgres@127.0.0.1:5432/safedrive"
+python scripts/generate_data.py --vehicles 100 --telemetry-count 1000000 --batch-size 20000
+python scripts/benchmark_queries.py --runs 10 --output baseline.json
+python scripts/benchmark_queries.py --runs 10 --optimize --output optimized.json
+```
+
+See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for the actual measured results, query plans, methodology, and limitations. SafeDrive remains a portfolio engineering project and is not production-ready.
+
+## Future improvements (Phase 3+)
+
+PySpark processing, a configurable YAML safety-rule engine, richer telemetry charts in the event panel, Dockerized deployment, and broader production-style performance testing.
