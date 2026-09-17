@@ -80,7 +80,7 @@ python scripts/benchmark_queries.py --runs 10 --optimize --output optimized.json
 
 See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for the actual measured results, query plans, methodology, and limitations. SafeDrive remains a portfolio engineering project and is not production-ready.
 
-The PySpark batch pipeline is documented in [docs/SPARK_PIPELINE.md](docs/SPARK_PIPELINE.md).
+The PySpark batch pipeline is documented in [docs/SPARK_PIPELINE.md](docs/SPARK_PIPELINE.md). Configurable YAML safety rules and explainable evaluations are documented in [docs/SAFETY_RULE_ENGINE.md](docs/SAFETY_RULE_ENGINE.md).
 
 ## Future improvements (Phase 3+)
 

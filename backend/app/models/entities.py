@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..database import Base
 
@@ -66,3 +66,16 @@ class SparkSoftwareSummary(Base):
     software_version: Mapped[str] = mapped_column(String(30), primary_key=True)
     telemetry_count: Mapped[int] = mapped_column(Integer)
     safety_condition_count: Mapped[int] = mapped_column(Integer)
+
+class SafetyEvaluation(Base):
+    __tablename__ = "safety_evaluations"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    telemetry_id: Mapped[int] = mapped_column(ForeignKey("telemetry.id"), index=True)
+    vehicle_id: Mapped[int] = mapped_column(Integer, index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, index=True)
+    rule_id: Mapped[str] = mapped_column(String(80), index=True)
+    rule_name: Mapped[str] = mapped_column(String(120))
+    severity: Mapped[str] = mapped_column(String(20), index=True)
+    evidence: Mapped[dict] = mapped_column(JSON)
+    software_version: Mapped[str] = mapped_column(String(30), index=True)
+    route_id: Mapped[str] = mapped_column(String(20), index=True)

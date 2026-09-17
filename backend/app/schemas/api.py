@@ -25,3 +25,7 @@ class SparkVehicleSummaryOut(BaseModel):
 
 class SparkRouteSummaryOut(BaseModel):
     route_id: str; telemetry_record_count: int; average_speed: float; safety_condition_count: int
+
+class SafetyEvaluationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int; telemetry_id: int; vehicle_id: int; timestamp: datetime; rule_id: str; rule_name: str; severity: str; evidence: list[dict]; software_version: str; route_id: str

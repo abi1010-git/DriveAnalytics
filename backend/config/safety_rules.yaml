@@ -1,0 +1,50 @@
+rules:
+  - id: hard_braking
+    name: Hard Braking
+    description: Detect unusually strong negative acceleration in synthetic telemetry.
+    enabled: true
+    severity: HIGH
+    conditions:
+      - field: acceleration_mps2
+        operator: lt
+        value: -4.5
+  - id: excessive_speed
+    name: Excessive Speed
+    description: Detect an illustrative high-speed threshold in synthetic telemetry.
+    enabled: true
+    severity: MEDIUM
+    conditions:
+      - field: speed_mph
+        operator: gt
+        value: 65
+  - id: sensor_failure
+    name: Sensor Failure
+    description: Detect a simulated non-OK sensor state.
+    enabled: true
+    severity: HIGH
+    conditions:
+      - field: sensor_status
+        operator: neq
+        value: OK
+  - id: rapid_acceleration
+    name: Rapid Acceleration
+    description: Detect unusually strong positive acceleration in synthetic telemetry.
+    enabled: true
+    severity: MEDIUM
+    conditions:
+      - field: acceleration_mps2
+        operator: gt
+        value: 2.2
+  - id: high_speed_hard_braking
+    name: High-Speed Hard Braking
+    description: Detect simultaneous illustrative high speed and hard braking.
+    enabled: true
+    severity: CRITICAL
+    match: all
+    conditions:
+      - field: speed_mph
+        operator: gt
+        value: 55
+      - field: acceleration_mps2
+        operator: lt
+        value: -4.5

@@ -7,20 +7,21 @@ const API = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 type Event = { id:number; vehicle_id:number; timestamp:string; event_type:string; severity:string; software_version:string; route_id:string; description:string };
 type Summary = { total_vehicles:number; total_safety_events:number; hard_braking_count:number; sensor_failure_count:number; events_by_severity:Record<string,number>; events_by_event_type:Record<string,number>; events_by_software_version:Record<string,number> };
 type FleetSummary = { vehicle_id:number; telemetry_record_count:number; average_speed:number; max_speed:number; hard_braking_count:number; rapid_acceleration_count:number; sensor_failure_count:number };
+type Evaluation = { id:number; vehicle_id:number; timestamp:string; rule_name:string; severity:string; route_id:string; software_version:string; evidence:{field:string;operator:string;threshold:unknown;observed:unknown}[] };
 const chart = (values:Record<string,number>) => Object.entries(values).map(([name,value]) => ({ name, value }));
 
 function App() {
-  const [summary,setSummary] = useState<Summary|null>(null), [events,setEvents] = useState<Event[]>([]), [fleet,setFleet] = useState<FleetSummary[]>([]), [selected,setSelected] = useState<Event|null>(null), [severity,setSeverity] = useState(''), [error,setError] = useState<string|null>(null);
+  const [summary,setSummary] = useState<Summary|null>(null), [events,setEvents] = useState<Event[]>([]), [fleet,setFleet] = useState<FleetSummary[]>([]), [evaluations,setEvaluations] = useState<Evaluation[]>([]), [selected,setSelected] = useState<Event|null>(null), [severity,setSeverity] = useState(''), [error,setError] = useState<string|null>(null);
   const load = () => {
     setError(null); setSummary(null);
     const json = (response:Response) => { if (!response.ok) throw Error(`Request failed (${response.status})`); return response.json(); };
-    Promise.all([fetch(`${API}/api/metrics/summary`).then(json), fetch(`${API}/api/events`).then(json), fetch(`${API}/api/analytics/fleet-summary`).then(json)])
-      .then(([metrics, eventRows, fleetRows]) => { setSummary(metrics); setEvents(eventRows); setFleet(fleetRows); })
+    Promise.all([fetch(`${API}/api/metrics/summary`).then(json), fetch(`${API}/api/events`).then(json), fetch(`${API}/api/analytics/fleet-summary`).then(json), fetch(`${API}/api/safety/evaluations`).then(json)])
+      .then(([metrics, eventRows, fleetRows, evaluationRows]) => { setSummary(metrics); setEvents(eventRows); setFleet(fleetRows); setEvaluations(evaluationRows); })
       .catch(reason => setError(reason instanceof Error ? reason.message : 'Unable to load analytics'));
   };
   useEffect(load, []);
   const shown = events.filter(event => !severity || event.severity === severity);
-  return <main>
+  return <main><SafetyEvaluations evaluations={evaluations}/>
     <header><div><span className="eyebrow">SAFEDRIVE / ENGINEERING ANALYTICS</span><h1>Safety operations console</h1><p>Simulated fleet telemetry and event intelligence.</p></div><span className="badge">● SYNTHETIC DATA</span></header>
     {error ? <section><p>Unable to load analytics from <code>{API}</code>: {error}</p><button onClick={load}>Retry</button></section> : !summary ? <p>Loading analytics…</p> : <>
       <section className="cards">{[['Fleet vehicles',summary.total_vehicles],['Safety events',summary.total_safety_events],['Critical events',summary.events_by_severity.CRITICAL||0],['Hard braking',summary.hard_braking_count],['Sensor failures',summary.sensor_failure_count]].map(([name,value]) => <article key={String(name)}><small>{name}</small><strong>{value}</strong><span>Current dataset</span></article>)}</section>
@@ -32,4 +33,5 @@ function App() {
   </main>;
 }
 function Panel({ title, children }: { title:string; children:any }) { return <article className="panel"><h3>{title}</h3><ResponsiveContainer width="100%" height={220}>{children}</ResponsiveContainer></article>; }
+function SafetyEvaluations({ evaluations }: { evaluations: Evaluation[] }) { const [severity,setSeverity] = useState(''); const [selected,setSelected] = useState<Evaluation|null>(null); const shown = evaluations.filter(item => !severity || item.severity === severity); return <section className="spark-summary"><div className="section-head"><div><span className="eyebrow">SAFETY RULE ENGINE</span><h2>Triggered evaluations</h2></div><select value={severity} onChange={event => setSeverity(event.target.value)}><option value="">All severities</option>{['LOW','MEDIUM','HIGH','CRITICAL'].map(value => <option key={value}>{value}</option>)}</select></div>{shown.length ? <table><thead><tr><th>Timestamp</th><th>Vehicle</th><th>Rule</th><th>Severity</th><th>Route</th><th>Version</th></tr></thead><tbody>{shown.slice(0,20).map(evaluation => <tr key={evaluation.id} onClick={() => setSelected(evaluation)}><td>{new Date(evaluation.timestamp).toLocaleString()}</td><td>SD-{String(evaluation.vehicle_id).padStart(3,'0')}</td><td>{evaluation.rule_name}</td><td><span className={'severity '+evaluation.severity.toLowerCase()}>{evaluation.severity}</span></td><td>{evaluation.route_id}</td><td>{evaluation.software_version}</td></tr>)}</tbody></table> : <p>No triggered rule evaluations found.</p>}{selected && <div className="telemetry-note"><strong>Safety Evaluation:</strong> {selected.rule_name} ({selected.severity})<br/>Vehicle SD-{String(selected.vehicle_id).padStart(3,'0')} · {new Date(selected.timestamp).toLocaleString()}<br/>{selected.evidence.map((item,index) => <span key={index}><br/>{item.field} {item.operator} {String(item.threshold)} — observed {String(item.observed)}</span>)}</div>}</section>; }
 createRoot(document.getElementById('root')!).render(<App/>);

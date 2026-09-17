@@ -3,11 +3,27 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 from ..database import get_db
-from ..models import Vehicle, Telemetry, SafetyEvent, SparkVehicleSummary, SparkRouteSummary
-from ..schemas.api import VehicleOut, TelemetryOut, EventOut, EventDetail, SparkVehicleSummaryOut, SparkRouteSummaryOut
+from ..models import Vehicle, Telemetry, SafetyEvent, SparkVehicleSummary, SparkRouteSummary, SafetyEvaluation
+from ..schemas.api import VehicleOut, TelemetryOut, EventOut, EventDetail, SparkVehicleSummaryOut, SparkRouteSummaryOut, SafetyEvaluationOut
+from ..services.rule_engine import load_rules
+from pathlib import Path
 from ..services.queries import filtered_events, summary, nearby
 
 router = APIRouter(prefix="/api")
+@router.get("/safety/rules")
+def safety_rules(): return load_rules(Path(__file__).resolve().parents[1] / "../config/safety_rules.yaml").model_dump()
+@router.get("/safety/evaluations", response_model=list[SafetyEvaluationOut])
+def safety_evaluations(vehicle_id: int|None=None, rule_id: str|None=None, severity: str|None=None, route_id: str|None=None, db: Session=Depends(get_db)):
+    stmt=select(SafetyEvaluation).order_by(SafetyEvaluation.timestamp.desc())
+    for field in ("vehicle_id","rule_id","severity","route_id"):
+        value=locals()[field]
+        if value not in (None,""): stmt=stmt.where(getattr(SafetyEvaluation,field)==value)
+    return db.scalars(stmt).all()
+@router.get("/safety/evaluations/{evaluation_id}", response_model=SafetyEvaluationOut)
+def safety_evaluation(evaluation_id: int, db: Session=Depends(get_db)):
+    evaluation=db.get(SafetyEvaluation,evaluation_id)
+    if not evaluation: raise HTTPException(404,"Safety evaluation not found")
+    return evaluation
 @router.get("/analytics/fleet-summary", response_model=list[SparkVehicleSummaryOut])
 def spark_fleet_summary(db: Session = Depends(get_db)): return db.scalars(select(SparkVehicleSummary).order_by(SparkVehicleSummary.vehicle_id)).all()
 @router.get("/analytics/routes", response_model=list[SparkRouteSummaryOut])
