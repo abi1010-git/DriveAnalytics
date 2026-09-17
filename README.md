@@ -1,35 +1,72 @@
-# SafeDrive: Autonomous Vehicle Safety Analytics Platform
+# SafeDrive
 
-SafeDrive is a portfolio-grade internal engineering analytics tool built around entirely simulated autonomous-vehicle telemetry and safety events. It is not affiliated with, based on, or representative of any proprietary vehicle system.
+## Autonomous Vehicle Safety Analytics Platform
+
+SafeDrive is a full-stack engineering platform for processing and investigating entirely synthetic autonomous-vehicle telemetry and safety events. It is an independent educational/portfolio project and is not affiliated with any autonomous-vehicle company.
 
 ## Overview
 
-The MVP generates reproducible telemetry for 20 simulated vehicles, derives safety events from signal thresholds, stores the data in SQLite (or PostgreSQL), and exposes a typed FastAPI API consumed by a React dashboard.
+The project demonstrates an end-to-end analytics workflow: FastAPI and React backed by PostgreSQL, reproducible SQL performance analysis, a PySpark/Parquet batch pipeline, and a configuration-driven YAML safety-rule engine.
 
-```text
-Synthetic Telemetry Generator
-          |
-          v
-   PostgreSQL / SQLite
-          |
-          v
-      FastAPI API
-          |
-          v
-  React + TypeScript
-          |
-          v
- Safety Analytics Dashboard
+## Screenshots
+
+Screenshots are intentionally not fabricated. See [`docs/images/README.md`](docs/images/README.md) for the four recommended captures: dashboard overview, safety evaluations, evaluation evidence, and Spark fleet summaries.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    A[Synthetic Telemetry] --> B[Parquet]
+    B --> C[PySpark]
+    C --> D[Aggregations]
+    A --> E[YAML Safety Rules]
+    E --> F[Rule Engine]
+    F --> G[Triggered Evaluations]
+    D --> H[(PostgreSQL)]
+    G --> H
+    H --> I[FastAPI]
+    I --> J[React + TypeScript]
 ```
 
-## Features and stack
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for component responsibilities and data flow.
 
-FastAPI, SQLAlchemy, Pydantic, pytest, React, TypeScript, Vite, Recharts, PySpark, and Parquet. Features include summary metrics, event filters, event details, nearby telemetry API lookup, and Spark-derived fleet summaries.
+## Key features
+
+- Fleet, vehicle, route, telemetry, and safety-event analytics.
+- PostgreSQL support with SQLite fallback for lightweight development and tests.
+- Reproducible million-row synthetic telemetry generation and SQL `EXPLAIN ANALYZE` benchmarking.
+- PySpark batch transformations, temporal window analysis, and Parquet summaries.
+- YAML-configured safety rules with typed validation and explainable evidence.
+- React investigation views for events and triggered rule evaluations.
+
+## Tech stack
+
+Python, FastAPI, SQLAlchemy, PostgreSQL 17, SQLite, pytest, PySpark, Parquet, React, TypeScript, Vite, Recharts, Docker Compose, and GitHub Actions.
+
+## Safety analytics
+
+The API exposes summary metrics, safety events, telemetry, Spark-derived summaries, configured rules, and persisted rule evaluations. Rule thresholds are illustrative and apply only to synthetic data; they are not autonomous-vehicle safety, regulatory, or industry requirements.
+
+## PySpark telemetry pipeline
+
+The optional local batch workflow reads raw Parquet, validates and enriches telemetry, computes vehicle-level window features, detects candidate conditions, and writes aggregate Parquet datasets. It does not replace PostgreSQL or load every raw row back into the API database. See [`docs/SPARK_PIPELINE.md`](docs/SPARK_PIPELINE.md).
+
+## Safety rule engine
+
+Rules live in `backend/config/safety_rules.yaml` and use a constrained field/operator whitelist—never executable Python expressions. Triggered evaluations are persisted with observed values and thresholds so an engineer can investigate why a record was flagged. See [`docs/SAFETY_RULE_ENGINE.md`](docs/SAFETY_RULE_ENGINE.md).
+
+## PostgreSQL performance engineering
+
+Phase 2 includes configurable synthetic data generation, reproducible query timing, PostgreSQL query plans, and evidence-based indexing. The measured environment, baseline, optimized results, and limitations are documented in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md); benchmark figures there are not changed by this polish work.
+
+## Testing
+
+Backend and rule-engine tests run with `pytest` from `backend`. The frontend uses TypeScript’s build check and Vite production build. Spark transformation tests are available locally and require Java/PySpark; CI intentionally runs the smaller core suite to keep hosted checks reliable.
 
 ## Local setup
 
 ```powershell
-cd safedrive/backend
+cd backend
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -40,48 +77,33 @@ uvicorn app.main:app --reload
 In another terminal:
 
 ```powershell
-cd safedrive/frontend
-npm.cmd install
-npm.cmd run dev
+cd frontend
+npm install
+npm run dev
 ```
 
-Set `DATABASE_URL` from `.env.example` to use PostgreSQL. Never commit credentials.
+For PostgreSQL, set `DATABASE_URL` before starting the backend, for example `postgresql+psycopg2://postgres@127.0.0.1:5432/safedrive` when using a local `pgpass.conf`, then run the generator. Do not commit `.env` or credential files.
 
-## API overview
+## Docker setup
 
-`GET /health`, `/api/vehicles`, `/api/events` (vehicle, event type, severity, version, route, and date filters), `/api/events/{id}`, `/api/metrics/summary`, and `/api/vehicles/{id}/telemetry` (date filters). Swagger is available at `/docs`.
-
-## Synthetic data
-
-The generator uses seed 42 and creates only simulated values. Hard braking, sensor failure, high speed, and acceleration events are derived from corresponding telemetry records.
-
-## Testing
+Install Docker Desktop, then:
 
 ```powershell
-cd safedrive/backend
-pytest
-cd ..\frontend
-npm.cmd run build
+Copy-Item .env.docker.example .env
+# Edit .env and set a local POSTGRES_PASSWORD.
+docker compose up --build -d
+docker compose run --rm backend python scripts/generate_data.py
 ```
 
-## Performance Engineering
+Open `http://localhost:5173`. Stop services with `docker compose down`; add `-v` only when you intentionally want to remove the local Compose database volume. Spark remains a documented local workflow rather than a Compose service.
 
-Phase 2 includes PostgreSQL support, configurable batch generation, and a reproducible SQL benchmark. The measured benchmark dataset contains 100 vehicles, 1,000,000 synthetic telemetry records, and 62,792 synthetic safety events in local PostgreSQL 17. The tested queries cover vehicle telemetry ranges, telemetry surrounding an event, event aggregation by time range, and aggregation by vehicle and route. The measured optimization is a composite `(vehicle_id, timestamp)` telemetry index selected from `EXPLAIN ANALYZE` for the nearby-telemetry lookup.
+## Documentation
 
-Run the benchmark with PostgreSQL credentials supplied through the environment or a local PostgreSQL password file:
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md)
+- [`docs/SPARK_PIPELINE.md`](docs/SPARK_PIPELINE.md)
+- [`docs/SAFETY_RULE_ENGINE.md`](docs/SAFETY_RULE_ENGINE.md)
 
-```powershell
-cd safedrive/backend
-$env:DATABASE_URL = "postgresql+psycopg2://postgres@127.0.0.1:5432/safedrive"
-python scripts/generate_data.py --vehicles 100 --telemetry-count 1000000 --batch-size 20000
-python scripts/benchmark_queries.py --runs 10 --output baseline.json
-python scripts/benchmark_queries.py --runs 10 --optimize --output optimized.json
-```
+## Limitations
 
-See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for the actual measured results, query plans, methodology, and limitations. SafeDrive remains a portfolio engineering project and is not production-ready.
-
-The PySpark batch pipeline is documented in [docs/SPARK_PIPELINE.md](docs/SPARK_PIPELINE.md). Configurable YAML safety rules and explainable evaluations are documented in [docs/SAFETY_RULE_ENGINE.md](docs/SAFETY_RULE_ENGINE.md).
-
-## Future improvements (Phase 3+)
-
-PySpark processing, a configurable YAML safety-rule engine, richer telemetry charts in the event panel, Dockerized deployment, and broader production-style performance testing.
+All telemetry and safety conditions are synthetic. This is an educational portfolio system, not a certified or production autonomous-vehicle safety platform. Local database, Spark, and benchmark results are environment-dependent and should not be interpreted as production performance or safety evidence.
