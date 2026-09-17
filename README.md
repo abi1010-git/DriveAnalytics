@@ -24,7 +24,7 @@ Synthetic Telemetry Generator
 
 ## Features and stack
 
-FastAPI, SQLAlchemy, Pydantic, pytest, React, TypeScript, Vite, and Recharts. Features include summary metrics, event filters, event details, and nearby telemetry API lookup.
+FastAPI, SQLAlchemy, Pydantic, pytest, React, TypeScript, Vite, Recharts, PySpark, and Parquet. Features include summary metrics, event filters, event details, nearby telemetry API lookup, and Spark-derived fleet summaries.
 
 ## Local setup
 
@@ -79,6 +79,8 @@ python scripts/benchmark_queries.py --runs 10 --optimize --output optimized.json
 ```
 
 See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for the actual measured results, query plans, methodology, and limitations. SafeDrive remains a portfolio engineering project and is not production-ready.
+
+The PySpark batch pipeline is documented in [docs/SPARK_PIPELINE.md](docs/SPARK_PIPELINE.md).
 
 ## Future improvements (Phase 3+)
 

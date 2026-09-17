@@ -37,3 +37,32 @@ class SafetyEvent(Base):
     software_version: Mapped[str] = mapped_column(String(30), index=True)
     route_id: Mapped[str] = mapped_column(String(20), index=True)
     vehicle = relationship("Vehicle", back_populates="events")
+
+class SparkVehicleSummary(Base):
+    __tablename__ = "spark_vehicle_summary"
+    vehicle_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    telemetry_record_count: Mapped[int] = mapped_column(Integer)
+    average_speed: Mapped[float] = mapped_column(Float)
+    max_speed: Mapped[float] = mapped_column(Float)
+    hard_braking_count: Mapped[int] = mapped_column(Integer)
+    rapid_acceleration_count: Mapped[int] = mapped_column(Integer)
+    sensor_failure_count: Mapped[int] = mapped_column(Integer)
+
+class SparkRouteSummary(Base):
+    __tablename__ = "spark_route_summary"
+    route_id: Mapped[str] = mapped_column(String(20), primary_key=True)
+    telemetry_record_count: Mapped[int] = mapped_column(Integer)
+    average_speed: Mapped[float] = mapped_column(Float)
+    safety_condition_count: Mapped[int] = mapped_column(Integer)
+
+class SparkTimeSummary(Base):
+    __tablename__ = "spark_time_summary"
+    time_bucket: Mapped[datetime] = mapped_column(DateTime, primary_key=True)
+    telemetry_record_count: Mapped[int] = mapped_column(Integer)
+    safety_condition_count: Mapped[int] = mapped_column(Integer)
+
+class SparkSoftwareSummary(Base):
+    __tablename__ = "spark_software_summary"
+    software_version: Mapped[str] = mapped_column(String(30), primary_key=True)
+    telemetry_count: Mapped[int] = mapped_column(Integer)
+    safety_condition_count: Mapped[int] = mapped_column(Integer)

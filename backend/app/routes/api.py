@@ -3,11 +3,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 from ..database import get_db
-from ..models import Vehicle, Telemetry, SafetyEvent
-from ..schemas.api import VehicleOut, TelemetryOut, EventOut, EventDetail
+from ..models import Vehicle, Telemetry, SafetyEvent, SparkVehicleSummary, SparkRouteSummary
+from ..schemas.api import VehicleOut, TelemetryOut, EventOut, EventDetail, SparkVehicleSummaryOut, SparkRouteSummaryOut
 from ..services.queries import filtered_events, summary, nearby
 
 router = APIRouter(prefix="/api")
+@router.get("/analytics/fleet-summary", response_model=list[SparkVehicleSummaryOut])
+def spark_fleet_summary(db: Session = Depends(get_db)): return db.scalars(select(SparkVehicleSummary).order_by(SparkVehicleSummary.vehicle_id)).all()
+@router.get("/analytics/routes", response_model=list[SparkRouteSummaryOut])
+def spark_routes(db: Session = Depends(get_db)): return db.scalars(select(SparkRouteSummary).order_by(SparkRouteSummary.route_id)).all()
 @router.get("/vehicles", response_model=list[VehicleOut])
 def vehicles(db: Session = Depends(get_db)): return db.scalars(select(Vehicle).order_by(Vehicle.id)).all()
 @router.get("/events", response_model=list[EventOut])
