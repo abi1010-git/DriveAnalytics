@@ -4,13 +4,21 @@
 
 SafeDrive is a full-stack engineering platform for processing and investigating entirely synthetic autonomous-vehicle telemetry and safety events. It is an independent educational/portfolio project and is not affiliated with any autonomous-vehicle company.
 
+![SafeDrive dashboard overview](docs/images/dashboard-overview.png)
+
+*SafeDrive dashboard showing fleet metrics, safety-event charts, and synthetic telemetry activity.*
+
 ## Overview
 
 The project demonstrates an end-to-end analytics workflow: FastAPI and React backed by PostgreSQL, reproducible SQL performance analysis, a PySpark/Parquet batch pipeline, and a configuration-driven YAML safety-rule engine.
 
 ## Screenshots
 
-Screenshots are intentionally not fabricated. See [`docs/images/README.md`](docs/images/README.md) for the four recommended captures: dashboard overview, safety evaluations, evaluation evidence, and Spark fleet summaries.
+The current captures show the working dashboard and event-investigation data. Additional rule-engine and PySpark views can be added later when those populated states are captured. See [`docs/images/README.md`](docs/images/README.md) for the recommended screenshot set.
+
+![SafeDrive event investigation](docs/images/event-investigation.png)
+
+*Recent synthetic safety events with vehicle, event type, severity, software version, and route context.*
 
 ## Architecture
 
