@@ -27,6 +27,7 @@ It began as a synthetic autonomous-vehicle telemetry demo, and that data and cod
 ## Roadmap
 
 1. Data loading. Done.
-2. API: crashes near a point or route (PostGIS), intersections ranked by severity, when/why breakdowns, year-over-year trends.
-3. UI: address search, map, factor and trend charts, and street-level imagery of a location via Mapillary.
-4. Deploy and docs.
+2. Map drill-down: US, then state, then county or city, then roads and crash dots. Done (FARS).
+3. API: crashes near a point or route (PostGIS), intersections ranked by severity, year-over-year trends.
+4. UI: address search, an NYC street-level view with all crashes, trend charts, and street-level imagery via Mapillary.
+5. Deploy and docs. Switch map tiles from tile.openstreetmap.org to a provider with an account before a public deploy.

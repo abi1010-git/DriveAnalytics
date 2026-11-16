@@ -29,6 +29,8 @@ UNKNOWN_LATITUDES = {77.7777, 88.8888, 99.9999}
 UNKNOWN_LONGITUDES = {777.7777, 888.8888, 999.9999}
 SPEEDING_CODES = {2, 3, 4, 5}  # racing, exceeded limit, too fast for conditions, specifics unknown
 _COUNTY_CODE_SUFFIX = re.compile(r"\s*\(\d+\)$")
+# Placeholder names FARS uses instead of a real city or county (letter case varies by year).
+PLACEHOLDER_NAMES = {"not applicable", "not reported", "other", "unknown", "reported as unknown"}
 
 
 def zip_path(year: int, raw_dir: Path = RAW_DIR) -> Path:
@@ -73,6 +75,32 @@ def _text(value: str | None) -> str | None:
     return value or None
 
 
+_ROUTE = re.compile(r"^(I|IH|US|SR|SH|STATE HWY|HWY|FM|RM|CR|TR|PR|LOOP|SPUR|BUS|RT|ROUTE)[\s-]*(\d+[A-Z]?)\b")
+# Road-class prefixes some states put in front of an ordinary street name: "MU-COIT RD"
+# (municipal), "CR-TUCKER RD" (county). Lettered routes such as "CR-C" have no space and are kept.
+_CLASS_PREFIX = re.compile(r"^(MU|CR|TR|CO)-(?=[A-Z][A-Z0-9.]* )")
+
+
+def route_key(road: str | None) -> str | None:
+    """One key per road so its crashes are counted together. States record the same road in
+    different ways ("I-45", "I-45/NORTH FWY", "I-45/GULF FWY"; "SR-3 GRATIOT AVE"), so a
+    leading route number wins; otherwise the name before any "/" alias is used."""
+    name = _text(road)
+    if name is None:
+        return None
+    name = re.sub(r"\s+", " ", name.upper())
+    if match := _ROUTE.match(name):
+        return f"{match.group(1)}-{match.group(2)}"
+    return _CLASS_PREFIX.sub("", name.split("/")[0].strip()) or None
+
+
+def _place(value: str | None) -> str | None:
+    name = _text(value)
+    if name:
+        name = _COUNTY_CODE_SUFFIX.sub("", name)
+    return None if name is None or name.casefold() in PLACEHOLDER_NAMES else name
+
+
 def vehicle_rollup(rows: list[dict[str, str]]) -> dict[int, dict]:
     """Collapse vehicle rows to one summary per crash (ST_CASE)."""
     out: dict[int, dict] = defaultdict(lambda: {"speeding_involved": False, "drinking_driver_involved": False, "max_speed_limit_mph": None})
@@ -103,8 +131,6 @@ def parse_accident(row: dict[str, str], year: int, vehicles: dict | None = None)
     lat, lon = _float(row.get("LATITUDE")), _float(row.get("LONGITUD"))
     if lat is None or lon is None or round(lat, 4) in UNKNOWN_LATITUDES or round(lon, 4) in UNKNOWN_LONGITUDES or lat == 0 or lon == 0:
         lat = lon = None
-    county = _text(row.get("COUNTYNAME"))
-    city = _text(row.get("CITYNAME"))
     record = {
         "id": f"{year}-{case}",
         "year": year,
@@ -112,8 +138,8 @@ def parse_accident(row: dict[str, str], year: int, vehicles: dict | None = None)
         "state_code": int(row["STATE"]),
         "state_name": _text(row.get("STATENAME")),
         "county_code": _int(row.get("COUNTY")),
-        "county_name": _COUNTY_CODE_SUFFIX.sub("", county) if county else None,
-        "city_name": None if _int(row.get("CITY")) in (0, None) or city in (None, "NOT APPLICABLE") else city,
+        "county_name": _place(row.get("COUNTYNAME")),
+        "city_name": None if _int(row.get("CITY")) in (0, None) else _place(row.get("CITYNAME")),
         "crash_date": crash_date,
         "hour": hour if hour is not None and 0 <= hour <= 23 else None,
         "minute": minute if minute is not None and 0 <= minute <= 59 else None,
@@ -133,6 +159,7 @@ def parse_accident(row: dict[str, str], year: int, vehicles: dict | None = None)
         "rural_urban": _text(row.get("RUR_URBNAME")),
         "road_class": _text(row.get("FUNC_SYSNAME")),
         "road_name": _text(row.get("TWAY_ID")),
+        "road_route": route_key(row.get("TWAY_ID")),
         "cross_road_name": _text(row.get("TWAY_ID2")),
         "first_harmful_event": _text(row.get("HARM_EVNAME")),
         "collision_manner": _text(row.get("MAN_COLLNAME")),

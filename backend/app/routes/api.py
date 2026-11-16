@@ -34,8 +34,10 @@ def datasets(db: Session = Depends(get_db)):
 
 
 @router.get("/risk-flags")
-def risk_flags(db: Session = Depends(get_db)):
-    return flag_counts(db, load_rules())
+def risk_flags(counts: bool = True, db: Session = Depends(get_db)):
+    """Every flag definition; with counts=false it skips counting matches (much faster)."""
+    rules = load_rules()
+    return flag_counts(db, rules) if counts else [rule.model_dump() for rule in rules.rules]
 
 
 @router.get("/fars/crashes", response_model=list[FarsCrashOut])

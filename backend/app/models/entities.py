@@ -44,6 +44,7 @@ class FarsCrash(Base):
     rural_urban: Mapped[str | None] = mapped_column(Text)
     road_class: Mapped[str | None] = mapped_column(Text)
     road_name: Mapped[str | None] = mapped_column(Text)
+    road_route: Mapped[str | None] = mapped_column(Text, index=True)  # normalized key, e.g. "I-45" for "I-45/GULF FWY"
     cross_road_name: Mapped[str | None] = mapped_column(Text)
     first_harmful_event: Mapped[str | None] = mapped_column(Text)
     collision_manner: Mapped[str | None] = mapped_column(Text)

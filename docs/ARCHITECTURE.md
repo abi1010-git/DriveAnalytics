@@ -40,3 +40,24 @@ Both crash tables have a `(latitude, longitude)` B-tree index, which is enough f
 | `GET /api/risk-flags` | Every flag definition with the number of crashes it matched |
 | `GET /api/fars/crashes` | Filters: `year`, `state_code`, `flag`, `bbox=min_lon,min_lat,max_lon,max_lat`, `limit` |
 | `GET /api/nyc/crashes` | Filters: `borough`, `start`, `end`, `flag`, `bbox`, `limit`; includes contributing factors |
+
+## Map API
+
+These endpoints all use FARS. `state_code` and `county_code` are FIPS codes, and every endpoint also accepts `year_from` and `year_to`.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/map/states` | Fatal crashes and deaths per state |
+| `GET /api/map/counties?state_code=48` | The same per county, with a 5-digit `fips` that matches the boundary file |
+| `GET /api/map/cities?state_code=48[&county_code=201]` | Cities with the most deaths, with an average location for the map bubble |
+| `GET /api/map/summary?state_code=48[&county_code=…][&city=…]` | Top roads (grouped by route key), flag counts and crashes by hour for one area |
+| `GET /api/map/crashes?state_code=48&county_code=201` | Crash points with coordinates and flags, for the dots on the map |
+
+Road ranking groups on `fars_crashes.road_route`, a key the loader derives from FARS's free-text road name (`TWAY_ID`). The rules are in `pipeline/fars.py:route_key` and covered by tests.
+
+## Frontend
+
+- `frontend/src/api.ts`: API client and types.
+- `frontend/src/geo.ts`: loads state and county boundaries from the `us-atlas` package. Counties load lazily (about 800 KB), only when a state is opened.
+- `frontend/src/components/CrashMap.tsx`: the Leaflet map, with shaded states and counties, city bubbles and crash dots.
+- `frontend/src/components/SidePanel.tsx`: breadcrumbs, totals, ranked lists, roads, factors and time of day.

@@ -9,13 +9,30 @@ DriveAnalytics loads two public datasets into PostgreSQL and makes them searchab
 
 The goal is a tool anyone can use to look up crash history near an address or along a route, see which intersections are most dangerous by severity rather than raw counts, and understand what conditions show up in crashes near them.
 
+## Explore the map
+
+![US map shaded by traffic deaths per state, 2020–2024](docs/images/us-map.jpg)
+
+1. **Start with the country.** States are shaded by the number of people killed in crashes from 2020 to 2024.
+2. **Click a state.** Its counties are shaded the same way, and the state's cities with the most deaths appear as bubbles and in a list.
+3. **Click a county or a city.** Every fatal crash appears as a dot on a street map. The side panel shows:
+   - the roads with the most deaths, and for each road the share of its crashes that involved speeding, a drinking driver, or a pedestrian or cyclist
+   - what police recorded (dark roads, bad weather, intersections and so on)
+   - the time of day
+4. **Click a road** to light up its crashes, or **click a dot** for one crash's details.
+
+![Wayne County, Michigan, with fatal crashes on I-94 highlighted](docs/images/wayne-county-i94.jpg)
+
+These are totals, not rates. A busy interstate will rank high partly because so many people drive it, and the app says so.
+
 ## Status
 
 | Phase | What | State |
 |---|---|---|
 | 1. Data | Reproducible download + load of FARS and NYC into PostgreSQL, risk-factor flags, tests | **Done** |
-| 2. API | Crashes near a point or route (PostGIS), intersections ranked by severity, time-of-day/weather/factor breakdowns, year-over-year trends | Next |
-| 3. UI | Address search, crash map, charts, street-level imagery of a location (Mapillary) | Planned |
+| 3a. Map | State → county/city drill-down, roads ranked by deaths, crash dots with details, factor and time-of-day breakdowns | **Done** |
+| 2. API | Crashes near a point or route (PostGIS), intersections ranked by severity, year-over-year trends | Next |
+| 3b. UI | Address search, NYC street-level view (all crashes, not just fatal), trends, street-level imagery of a location (Mapillary) | Planned |
 | 4. Deploy | Hosted demo, docs | Planned |
 
 ### What's loaded today (local run, Nov 2026)
@@ -44,7 +61,11 @@ flowchart LR
 - **Risk flags** (`backend/config/risk_flags.yaml`):
   - Readable YAML rules such as "speeding involved", "dark, no street lighting" or "pedestrian injured", attached to each crash at load time.
   - The rule engine accepts only whitelisted fields and operators and never executes code. See [`docs/RISK_FLAGS.md`](docs/RISK_FLAGS.md).
-- **API**: FastAPI. Phase 1 endpoints are listed in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+- **API**: FastAPI. Endpoints are listed in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+- **Map**:
+  - React + Leaflet.
+  - State and county boundaries come from the Census Bureau via `us-atlas`, and are joined to FARS on FIPS codes.
+  - Street tiles come from OpenStreetMap, darkened with CSS. OSM's free tile servers are meant for light use, so a public deploy should switch to a tile provider with an account.
 
 ## Run it locally
 
@@ -101,6 +122,7 @@ The tests build small FARS zips and NYC files in their real formats, including a
 
 - FARS covers only crashes in which someone died, so it shows where people die, not where most crashes happen.
 - NYC data is preliminary, and contributing factors are an officer's judgment at the scene.
+- Each state records road names its own way. The loader merges spellings of the same route ("I-45", "I-45/NORTH FWY" and "I-45/GULF FWY" all become I-45), but a road can still show up twice when some crashes were written by route number and others by street name ("FM-1093" and "WESTHEIMER RD").
 - Neither dataset includes traffic volume, so a busy road will show more crashes than a quiet one without being riskier per trip. Rankings will say this clearly.
 - No crash footage is used or linked. Location imagery (Phase 3) shows what a place looks like, not the crash.
 

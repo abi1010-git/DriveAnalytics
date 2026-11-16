@@ -1,74 +1,74 @@
-// Phase 1 page: shows what real data is loaded and how often each risk flag occurs.
-// The map, address search, rankings and trends arrive in Phase 3.
-import React, { useEffect, useState } from 'react';
+// DriveAnalytics: click a state, then a county or city, to see where people died in crashes,
+// which roads had the most deaths, and what police recorded about those crashes.
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import type { CityRow, CountyRow, CrashPoint, FlagDef, Selection, StateRow, Summary } from './api';
+import { API, api } from './api';
+import { CrashMap } from './components/CrashMap';
+import { SidePanel } from './components/SidePanel';
+import type { Boundary } from './geo';
+import { loadCounties, loadStates } from './geo';
 import './style.css';
 
-const API = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
-
-type FarsYear = { year: number; crashes: number; fatalities: number };
-type Datasets = {
-  fars: { name: string; coverage: string; years: FarsYear[]; last_loaded: string | null };
-  nyc: { name: string; coverage: string; crashes: number; with_coordinates: number; first_crash: string | null; last_crash: string | null; last_loaded: string | null };
-};
-type Flag = { id: string; name: string; description: string; source: 'fars' | 'nyc'; category: string; crashes_flagged: number };
-
-const fmt = (n: number) => n.toLocaleString();
-const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString() : '—');
-
 function App() {
-  const [data, setData] = useState<Datasets | null>(null);
-  const [flags, setFlags] = useState<Flag[]>([]);
+  const [selection, setSelection] = useState<Selection>({});
+  const [flags, setFlags] = useState<FlagDef[]>([]);
+  const [stateFeatures, setStateFeatures] = useState<Boundary[]>([]);
+  const [countyFeatures, setCountyFeatures] = useState<Boundary[]>([]);
+  const [states, setStates] = useState<StateRow[]>([]);
+  const [counties, setCounties] = useState<CountyRow[]>([]);
+  const [cities, setCities] = useState<CityRow[]>([]);
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [crashes, setCrashes] = useState<CrashPoint[]>([]);
+  const [selectedRoad, setSelectedRoad] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = () => {
+  const fail = (reason: unknown) => setError(reason instanceof Error ? reason.message : 'Unable to load data');
+
+  useEffect(() => {
+    api.flags().then(setFlags).catch(fail);
+    loadStates().then(setStateFeatures).catch(fail);
+  }, []);
+
+  // Load whatever the current level needs. A newer selection cancels older responses.
+  useEffect(() => {
+    let current = true;
+    const keep = <T,>(set: (v: T) => void) => (v: T) => { if (current) set(v); };
+    const inArea = selection.countyCode !== undefined || !!selection.city;
+    setLoading(true);
     setError(null);
-    const json = (r: Response) => { if (!r.ok) throw Error(`Request failed (${r.status})`); return r.json(); };
-    Promise.all([fetch(`${API}/api/datasets`).then(json), fetch(`${API}/api/risk-flags`).then(json)])
-      .then(([datasets, flagRows]) => { setData(datasets); setFlags(flagRows); })
-      .catch(reason => setError(reason instanceof Error ? reason.message : 'Unable to load data'));
-  };
-  useEffect(load, []);
+    setSelectedRoad(null);
+    setSummary(null);
+    setCrashes([]);
+    const jobs: Promise<unknown>[] = [];
+    if (selection.stateCode === undefined) {
+      jobs.push(api.states(selection).then(keep(setStates)));
+    } else {
+      jobs.push(loadCounties().then(keep(setCountyFeatures)));
+      jobs.push(api.counties(selection).then(keep(setCounties)));
+      jobs.push(api.summary(selection).then(keep(setSummary)));
+      if (!inArea) jobs.push(api.cities(selection).then(keep(setCities)));
+      if (inArea) jobs.push(api.crashes(selection).then(keep(setCrashes)));
+    }
+    Promise.all(jobs).catch(e => current && fail(e)).finally(() => current && setLoading(false));
+    return () => { current = false; };
+  }, [selection]);
 
-  if (error) return <main><p>Could not reach the API at <code>{API}</code>: {error}</p><button onClick={load}>Retry</button></main>;
-  if (!data) return <main><p>Loading…</p></main>;
+  const flagNames = useMemo(() => Object.fromEntries(flags.filter(f => f.source === 'fars').map(f => [f.id, f])), [flags]);
 
-  const farsTotal = data.fars.years.reduce((sum, y) => sum + y.crashes, 0);
-  const farsDeaths = data.fars.years.reduce((sum, y) => sum + y.fatalities, 0);
-  const years = data.fars.years.map(y => y.year);
-  return <main>
-    <header>
-      <div><span className="eyebrow">DRIVEANALYTICS</span><h1>US crash data explorer</h1>
-        <p>Real crash records from NHTSA (every fatal US crash) and NYC Open Data (every police-reported crash in New York City).</p></div>
-      <span className="badge">PHASE 1 · DATA LOADED</span>
-    </header>
-
-    <section className="cards">
-      <article><small>US fatal crashes</small><strong>{fmt(farsTotal)}</strong><span>{years.length ? `${years[0]}–${years[years.length - 1]}` : 'not loaded'}</span></article>
-      <article><small>People killed (US)</small><strong>{fmt(farsDeaths)}</strong><span>FARS</span></article>
-      <article><small>NYC crashes</small><strong>{fmt(data.nyc.crashes)}</strong><span>{day(data.nyc.first_crash)} – {day(data.nyc.last_crash)}</span></article>
-      <article><small>NYC crashes with a location</small><strong>{data.nyc.crashes ? `${Math.round(100 * data.nyc.with_coordinates / data.nyc.crashes)}%` : '—'}</strong><span>{fmt(data.nyc.with_coordinates)} mappable</span></article>
-    </section>
-
-    <section className="charts one">
-      <article className="panel"><h3>Fatal crashes per year, United States (FARS)</h3>
-        <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={data.fars.years}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="year" /><YAxis /><Tooltip formatter={v => fmt(Number(v))} /><Bar dataKey="crashes" name="Fatal crashes" fill="#38bdf8" /></BarChart>
-        </ResponsiveContainer>
-      </article>
-    </section>
-
-    {(['fars', 'nyc'] as const).map(source => <section className="investigate" key={source}>
-      <div className="section-head"><div><span className="eyebrow">RISK FLAGS · {source === 'fars' ? 'US FATAL CRASHES' : 'NEW YORK CITY'}</span>
-        <h2>What was recorded about these crashes</h2></div></div>
-      <table><thead><tr><th>Flag</th><th>Category</th><th>Crashes</th><th>How it is defined</th></tr></thead>
-        <tbody>{flags.filter(f => f.source === source).sort((a, b) => b.crashes_flagged - a.crashes_flagged).map(f =>
-          <tr key={f.id}><td>{f.name}</td><td>{f.category.replace(/_/g, ' ')}</td><td>{fmt(f.crashes_flagged)}</td><td className="muted">{f.description}</td></tr>)}</tbody></table>
-    </section>)}
-
-    <p className="footnote">A flag records what police reported about a crash; it does not establish cause. Sources: NHTSA FARS national files; NYC Open Data dataset h9gi-nx95.</p>
-  </main>;
+  return <div className="app">
+    <div className="map-wrap">
+      <CrashMap selection={selection} stateFeatures={stateFeatures} countyFeatures={countyFeatures} states={states} counties={counties}
+        cities={cities} crashes={crashes} flagNames={flagNames} selectedRoad={selectedRoad}
+        onState={(stateCode, stateName) => setSelection({ year: selection.year, stateCode, stateName })}
+        onCounty={(countyCode, countyName) => setSelection({ year: selection.year, stateCode: selection.stateCode, stateName: selection.stateName, countyCode, countyName })}
+        onCity={city => setSelection({ year: selection.year, stateCode: selection.stateCode, stateName: selection.stateName, city })} />
+      {error && <div className="error">Could not load data from <code>{API}</code>: {error}</div>}
+    </div>
+    <SidePanel selection={selection} states={states} counties={counties} cities={cities} summary={summary} flagNames={flagNames}
+      loading={loading} shownCrashes={crashes.length} selectedRoad={selectedRoad} onSelect={setSelection} onRoad={setSelectedRoad} />
+  </div>;
 }
 
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);

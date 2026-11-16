@@ -19,6 +19,13 @@ def test_parse_accident_basic_fields():
     assert record["cross_road_name"] is None
 
 
+def test_placeholder_place_names_become_null():
+    for name in ("Other", "Not Reported", "UNKNOWN"):
+        assert fars.parse_accident(accident(CITY="9997", CITYNAME=name), 2024)["city_name"] is None
+    assert fars.parse_accident(accident(COUNTY="999", COUNTYNAME="Unknown (999)"), 2024)["county_name"] is None
+    assert fars.parse_accident(accident(CITY="1", CITYNAME="CROTHERSVILLE"), 2024)["city_name"] == "CROTHERSVILLE"
+
+
 def test_unknown_codes_become_null():
     record = fars.parse_accident(accident(LATITUDE="77.77770000", LONGITUD="777.777700000", HOUR="99", MINUTE="99", DAY="99"), 2024)
     assert record["latitude"] is None and record["longitude"] is None
@@ -63,3 +70,14 @@ def test_load_year_leaves_other_years_alone(db, rules, fars_zip):
     fars.load_year(db, fars_zip([accident()], [vehicle(10001)], year=2023), 2023, rules.for_source("fars"))
     fars.load_year(db, fars_zip([accident()], [vehicle(10001)], year=2024), 2024, rules.for_source("fars"))
     assert sorted(db.scalars(select(FarsCrash.id))) == ["2023-10001", "2024-10001"]
+
+
+def test_route_key_groups_the_same_road():
+    cases = {
+        "I-45": "I-45", "I-45/NORTH FWY": "I-45", "I-45/GULF FWY": "I-45",
+        "SR-3 GRATIOT AVE": "SR-3", "SR- 31": "SR-31", "SR-7   E BASELINE RD": "SR-7", "US-31E NEW GLASGOW RD": "US-31E",
+        "FM 1093/WESTHEIMER RD": "FM-1093", "FM 379": "FM-379",
+        "MU-COIT RD": "COIT RD", "CR-TUCKER RD": "TUCKER RD", "CR-C": "CR-C", "CR-B40/390TH": "CR-B40",
+        "university blvd": "UNIVERSITY BLVD", "": None, None: None,
+    }
+    assert {name: fars.route_key(name) for name in cases} == cases

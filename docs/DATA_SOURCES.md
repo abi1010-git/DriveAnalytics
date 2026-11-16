@@ -33,6 +33,12 @@ DriveAnalytics uses two public datasets. Each is loaded by its own module in `ba
   - `VSPD_LIM`: 0 = no statutory limit, 98 = not reported, 99 = unknown. The loader ignores all three.
   - Most years are ASCII, but some contain Windows-1252 characters. 2020 has "LA CAÑADA FLINTRIDGE", for example. The loader tries UTF-8 first and falls back to cp1252.
   - `ST_CASE` is unique only within a year, so crash IDs are stored as `"{year}-{ST_CASE}"`.
+  - City and county names include placeholders: "Other", "Not Reported" and "Unknown", with letter case varying by year. These are stored as NULL so they don't show up as a "city" called Other.
+  - Road names (`TWAY_ID`) are free text written differently by each state. Examples: "I-45/GULF FWY", "SR-3 GRATIOT AVE", "FM 1093/WESTHEIMER RD", and "MU-COIT RD", where MU- marks a municipal street. The loader derives `road_route`:
+    - a leading route number wins, so these become `I-45`, `SR-3` and `FM-1093`
+    - otherwise it takes the name before any "/" alias, with a road-class prefix such as "MU-" removed
+
+    This is what roads are ranked by.
 - **Re-running** a year replaces that year in a single transaction, so running it twice gives the same result.
 
 ## NYC Open Data: Motor Vehicle Collisions – Crashes (`h9gi-nx95`)
