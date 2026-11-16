@@ -1,3 +1,3 @@
-from .entities import CrashFlag, FarsCrash, IngestRun, NycCrash, NycCrashFactor
+from .entities import CrashFlag, FarsCrash, IngestRun, LiveIncident, LivePoll, NycCrash, NycCrashFactor
 
-__all__ = ["CrashFlag", "FarsCrash", "IngestRun", "NycCrash", "NycCrashFactor"]
+__all__ = ["CrashFlag", "FarsCrash", "IngestRun", "LiveIncident", "LivePoll", "NycCrash", "NycCrashFactor"]

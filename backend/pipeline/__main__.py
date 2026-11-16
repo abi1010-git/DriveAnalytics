@@ -4,13 +4,15 @@
     python -m pipeline nyc                        download all NYC crashes and load them
     python -m pipeline nyc --since 2026-11-01     only rows created or updated on/after a date
     python -m pipeline nyc --file path.jsonl.gz   load an already-downloaded file
+    python -m pipeline live                       poll every live incident feed once
+    python -m pipeline live --every 10            keep polling every 10 minutes
 
 Set DATABASE_URL to load into PostgreSQL; the default is a local SQLite file.
 """
 import argparse
 import sys
 import time
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -40,9 +42,22 @@ def main(argv: list[str] | None = None) -> None:
     nyc_cmd.add_argument("--since", type=date.fromisoformat, help="only rows updated on/after this date (YYYY-MM-DD)")
     nyc_cmd.add_argument("--file", type=Path, help="load this raw .jsonl.gz instead of downloading")
     nyc_cmd.add_argument("--redownload", action="store_true")
+    live_cmd = commands.add_parser("live", help="poll live traffic-incident feeds")
+    live_cmd.add_argument("--source", action="append", help="only these sources (default: all)")
+    live_cmd.add_argument("--every", type=float, metavar="MINUTES", help="keep polling on this interval")
+    live_cmd.add_argument("--backfill-days", type=float, default=7, help="history to fetch the first time a source is polled")
     args = parser.parse_args(argv)
 
     Base.metadata.create_all(engine)
+    if args.command == "live":
+        from .live import ADAPTERS
+        from .live.poller import run
+        unknown = set(args.source or []) - set(ADAPTERS)
+        if unknown:
+            parser.error(f"unknown source(s): {', '.join(sorted(unknown))}; choose from {', '.join(ADAPTERS)}")
+        adapters = [ADAPTERS[name] for name in (args.source or ADAPTERS)]
+        run(SessionLocal, adapters, every_minutes=args.every, backfill=timedelta(days=args.backfill_days))
+        return
     rules = load_rules()
     started = time.perf_counter()
     with SessionLocal() as db:

@@ -113,3 +113,43 @@ class IngestRun(Base):
     rows_skipped: Mapped[int] = mapped_column(Integer, default=0)
     started_at: Mapped[datetime] = mapped_column(DateTime)
     finished_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class LiveIncident(Base):
+    """A traffic incident from a live feed (city dispatch data, state 511 systems).
+
+    These are reports, not verified crash records: they arrive within minutes but carry
+    no injury counts or causes, and some turn out to be minor. Rows are never deleted;
+    when a feed stops listing an incident it is marked cleared, so history builds up."""
+
+    __tablename__ = "live_incidents"
+    source: Mapped[str] = mapped_column(String(32), primary_key=True)
+    source_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    category: Mapped[str] = mapped_column(String(20), index=True)  # crash | hazard | stalled_vehicle | closure | fire | other
+    raw_type: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
+    road: Mapped[str | None] = mapped_column(Text)
+    latitude: Mapped[float | None] = mapped_column(Float)
+    longitude: Mapped[float | None] = mapped_column(Float)
+    reported_at: Mapped[datetime] = mapped_column(DateTime, index=True)  # UTC
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime)  # UTC, as given by the source
+    status: Mapped[str] = mapped_column(String(10), default="active")  # active | cleared
+    cleared_at: Mapped[datetime | None] = mapped_column(DateTime)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime)  # when our poller first saw it
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime)
+
+    __table_args__ = (Index("ix_live_incidents_lat_lon", "latitude", "longitude"),)
+
+
+class LivePoll(Base):
+    """One poll of one live source, so the app can show how fresh each feed is."""
+
+    __tablename__ = "live_polls"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(32), index=True)
+    polled_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    fetched: Mapped[int] = mapped_column(Integer, default=0)
+    inserted: Mapped[int] = mapped_column(Integer, default=0)
+    updated: Mapped[int] = mapped_column(Integer, default=0)
+    cleared: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text)
