@@ -1,49 +1,85 @@
-from datetime import datetime
+"""Phase 1 API: what data is loaded, the risk flags, and simple crash listings.
+Spatial search ("crashes near here"), severity rankings and trends come in Phase 2."""
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
+
 from ..database import get_db
-from ..models import Vehicle, Telemetry, SafetyEvent, SparkVehicleSummary, SparkRouteSummary, SafetyEvaluation
-from ..schemas.api import VehicleOut, TelemetryOut, EventOut, EventDetail, SparkVehicleSummaryOut, SparkRouteSummaryOut, SafetyEvaluationOut
+from ..models import CrashFlag, FarsCrash, NycCrash, NycCrashFactor
+from ..schemas.api import FarsCrashOut, NycCrashOut
+from ..services.queries import dataset_summary, flag_counts, flags_for
 from ..services.rule_engine import load_rules
-from pathlib import Path
-from ..services.queries import filtered_events, summary, nearby
 
 router = APIRouter(prefix="/api")
-@router.get("/safety/rules")
-def safety_rules(): return load_rules(Path(__file__).resolve().parents[1] / "../config/safety_rules.yaml").model_dump()
-@router.get("/safety/evaluations", response_model=list[SafetyEvaluationOut])
-def safety_evaluations(vehicle_id: int|None=None, rule_id: str|None=None, severity: str|None=None, route_id: str|None=None, db: Session=Depends(get_db)):
-    stmt=select(SafetyEvaluation).order_by(SafetyEvaluation.timestamp.desc())
-    for field in ("vehicle_id","rule_id","severity","route_id"):
-        value=locals()[field]
-        if value not in (None,""): stmt=stmt.where(getattr(SafetyEvaluation,field)==value)
-    return db.scalars(stmt).all()
-@router.get("/safety/evaluations/{evaluation_id}", response_model=SafetyEvaluationOut)
-def safety_evaluation(evaluation_id: int, db: Session=Depends(get_db)):
-    evaluation=db.get(SafetyEvaluation,evaluation_id)
-    if not evaluation: raise HTTPException(404,"Safety evaluation not found")
-    return evaluation
-@router.get("/analytics/fleet-summary", response_model=list[SparkVehicleSummaryOut])
-def spark_fleet_summary(db: Session = Depends(get_db)): return db.scalars(select(SparkVehicleSummary).order_by(SparkVehicleSummary.vehicle_id)).all()
-@router.get("/analytics/routes", response_model=list[SparkRouteSummaryOut])
-def spark_routes(db: Session = Depends(get_db)): return db.scalars(select(SparkRouteSummary).order_by(SparkRouteSummary.route_id)).all()
-@router.get("/vehicles", response_model=list[VehicleOut])
-def vehicles(db: Session = Depends(get_db)): return db.scalars(select(Vehicle).order_by(Vehicle.id)).all()
-@router.get("/events", response_model=list[EventOut])
-def events(vehicle_id: int|None=None, event_type: str|None=None, severity: str|None=None, software_version: str|None=None, route_id: str|None=None, start_date: datetime|None=None, end_date: datetime|None=None, db: Session=Depends(get_db)):
-    return filtered_events(db, vehicle_id=vehicle_id, event_type=event_type, severity=severity, software_version=software_version, route_id=route_id, start_date=start_date, end_date=end_date)
-@router.get("/events/{event_id}", response_model=EventDetail)
-def event_detail(event_id: int, db: Session=Depends(get_db)):
-    event = db.scalar(select(SafetyEvent).options(joinedload(SafetyEvent.vehicle)).where(SafetyEvent.id == event_id))
-    if not event: raise HTTPException(404, "Safety event not found")
-    return {**event.__dict__, "vehicle": event.vehicle, "nearby_telemetry": nearby(db, event)}
-@router.get("/metrics/summary")
-def metrics(db: Session=Depends(get_db)): return summary(db)
-@router.get("/vehicles/{vehicle_id}/telemetry", response_model=list[TelemetryOut])
-def telemetry(vehicle_id: int, start_date: datetime|None=None, end_date: datetime|None=None, db: Session=Depends(get_db)):
-    if not db.get(Vehicle, vehicle_id): raise HTTPException(404, "Vehicle not found")
-    stmt=select(Telemetry).where(Telemetry.vehicle_id==vehicle_id).order_by(Telemetry.timestamp)
-    if start_date: stmt=stmt.where(Telemetry.timestamp>=start_date)
-    if end_date: stmt=stmt.where(Telemetry.timestamp<=end_date)
-    return db.scalars(stmt).all()
+
+
+def _bbox(bbox: str | None) -> tuple[float, float, float, float] | None:
+    """Parse "min_lon,min_lat,max_lon,max_lat" (the usual map-library order)."""
+    if not bbox:
+        return None
+    try:
+        min_lon, min_lat, max_lon, max_lat = (float(part) for part in bbox.split(","))
+    except ValueError:
+        raise HTTPException(422, "bbox must be min_lon,min_lat,max_lon,max_lat")
+    if min_lon > max_lon or min_lat > max_lat:
+        raise HTTPException(422, "bbox minimums must be below maximums")
+    return min_lon, min_lat, max_lon, max_lat
+
+
+@router.get("/datasets")
+def datasets(db: Session = Depends(get_db)):
+    return dataset_summary(db)
+
+
+@router.get("/risk-flags")
+def risk_flags(counts: bool = True, db: Session = Depends(get_db)):
+    """Every flag definition; with counts=false it skips counting matches (much faster)."""
+    rules = load_rules()
+    return flag_counts(db, rules) if counts else [rule.model_dump() for rule in rules.rules]
+
+
+@router.get("/fars/crashes", response_model=list[FarsCrashOut])
+def fars_crashes(year: int | None = None, state_code: int | None = None, flag: str | None = None,
+                 bbox: str | None = Query(None, description="min_lon,min_lat,max_lon,max_lat"),
+                 limit: int = Query(100, ge=1, le=1000), db: Session = Depends(get_db)):
+    stmt = select(FarsCrash).order_by(FarsCrash.crash_date.desc(), FarsCrash.id).limit(limit)
+    if year is not None:
+        stmt = stmt.where(FarsCrash.year == year)
+    if state_code is not None:
+        stmt = stmt.where(FarsCrash.state_code == state_code)
+    if flag:
+        stmt = stmt.join(CrashFlag, (CrashFlag.crash_id == FarsCrash.id) & (CrashFlag.source == "fars")).where(CrashFlag.flag_id == flag)
+    if box := _bbox(bbox):
+        stmt = stmt.where(FarsCrash.longitude.between(box[0], box[2]), FarsCrash.latitude.between(box[1], box[3]))
+    crashes = db.scalars(stmt).all()
+    flags = flags_for(db, "fars", [c.id for c in crashes])
+    return [{**FarsCrashOut.model_validate(c).model_dump(), "flags": flags[c.id]} for c in crashes]
+
+
+@router.get("/nyc/crashes", response_model=list[NycCrashOut])
+def nyc_crashes(borough: str | None = None, start: date | None = None, end: date | None = None, flag: str | None = None,
+                bbox: str | None = Query(None, description="min_lon,min_lat,max_lon,max_lat"),
+                limit: int = Query(100, ge=1, le=1000), db: Session = Depends(get_db)):
+    stmt = select(NycCrash).order_by(NycCrash.crash_datetime.desc(), NycCrash.collision_id).limit(limit)
+    if borough:
+        stmt = stmt.where(NycCrash.borough == borough.upper())
+    if start:
+        stmt = stmt.where(NycCrash.crash_datetime >= start)
+    if end:
+        stmt = stmt.where(NycCrash.crash_datetime < end)
+    if flag:
+        stmt = stmt.join(CrashFlag, (CrashFlag.crash_id == NycCrash.collision_id) & (CrashFlag.source == "nyc")).where(CrashFlag.flag_id == flag)
+    if box := _bbox(bbox):
+        stmt = stmt.where(NycCrash.longitude.between(box[0], box[2]), NycCrash.latitude.between(box[1], box[3]))
+    crashes = db.scalars(stmt).all()
+    ids = [c.collision_id for c in crashes]
+    flags = flags_for(db, "nyc", ids)
+    factors: dict[str, list[str]] = {cid: [] for cid in ids}
+    if ids:
+        for cid, factor in db.execute(select(NycCrashFactor.collision_id, NycCrashFactor.factor)
+                                      .where(NycCrashFactor.collision_id.in_(ids)).order_by(NycCrashFactor.vehicle_number)):
+            factors[cid].append(factor)
+    return [{**NycCrashOut.model_validate(c).model_dump(), "flags": flags[c.collision_id], "contributing_factors": factors[c.collision_id]}
+            for c in crashes]

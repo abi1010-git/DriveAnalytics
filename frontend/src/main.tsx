@@ -1,37 +1,147 @@
-import React, { useEffect, useState } from 'react';
+// DriveAnalytics: click a state, then a county or city, to see where people were hurt or killed
+// in crashes, which roads had the most deaths, and what was recorded about those crashes.
+// Fatal crashes nationwide come from FARS (to 2024); newer data comes from city crash reports
+// and live incident feeds where they exist.
+import L from 'leaflet';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer } from 'recharts';
+import type { BBox, CityRow, CountyRow, Coverage, CrashPoint, FlagDef, RecentPoint, RecentSource, Selection, StateRow, Summary, TimeRange } from './api';
+import { API, FARS_FIRST, STATIC, THIS_YEAR, api, farsYears } from './api';
+import { CrashMap, Legend } from './components/CrashMap';
+import { SidePanel } from './components/SidePanel';
+import type { Boundary } from './geo';
+import { loadCounties, loadStates } from './geo';
+import type { Meta } from './static';
+import { meta } from './static';
 import './style.css';
 
-const API = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
-type Event = { id:number; vehicle_id:number; timestamp:string; event_type:string; severity:string; software_version:string; route_id:string; description:string };
-type Summary = { total_vehicles:number; total_safety_events:number; hard_braking_count:number; sensor_failure_count:number; events_by_severity:Record<string,number>; events_by_event_type:Record<string,number>; events_by_software_version:Record<string,number> };
-type FleetSummary = { vehicle_id:number; telemetry_record_count:number; average_speed:number; max_speed:number; hard_braking_count:number; rapid_acceleration_count:number; sensor_failure_count:number };
-type Evaluation = { id:number; vehicle_id:number; timestamp:string; rule_name:string; severity:string; route_id:string; software_version:string; evidence:{field:string;operator:string;threshold:unknown;observed:unknown}[] };
-const chart = (values:Record<string,number>) => Object.entries(values).map(([name,value]) => ({ name, value }));
+const US_BBOX: BBox = [-179.9, 17.5, -64.5, 71.5];
+
+function boundsToBBox(bounds: L.LatLngBounds, pad = 0): BBox {
+  return [bounds.getWest() - pad, bounds.getSouth() - pad, bounds.getEast() + pad, bounds.getNorth() + pad];
+}
 
 function App() {
-  const [summary,setSummary] = useState<Summary|null>(null), [events,setEvents] = useState<Event[]>([]), [fleet,setFleet] = useState<FleetSummary[]>([]), [evaluations,setEvaluations] = useState<Evaluation[]>([]), [selected,setSelected] = useState<Event|null>(null), [severity,setSeverity] = useState(''), [error,setError] = useState<string|null>(null);
-  const load = () => {
-    setError(null); setSummary(null);
-    const json = (response:Response) => { if (!response.ok) throw Error(`Request failed (${response.status})`); return response.json(); };
-    Promise.all([fetch(`${API}/api/metrics/summary`).then(json), fetch(`${API}/api/events`).then(json), fetch(`${API}/api/analytics/fleet-summary`).then(json), fetch(`${API}/api/safety/evaluations`).then(json)])
-      .then(([metrics, eventRows, fleetRows, evaluationRows]) => { setSummary(metrics); setEvents(eventRows); setFleet(fleetRows); setEvaluations(evaluationRows); })
-      .catch(reason => setError(reason instanceof Error ? reason.message : 'Unable to load analytics'));
-  };
-  useEffect(load, []);
-  const shown = events.filter(event => !severity || event.severity === severity);
-  return <main><SafetyEvaluations evaluations={evaluations}/>
-    <header><div><span className="eyebrow">SAFEDRIVE / ENGINEERING ANALYTICS</span><h1>Safety operations console</h1><p>Simulated fleet telemetry and event intelligence.</p></div><span className="badge">● SYNTHETIC DATA</span></header>
-    {error ? <section><p>Unable to load analytics from <code>{API}</code>: {error}</p><button onClick={load}>Retry</button></section> : !summary ? <p>Loading analytics…</p> : <>
-      <section className="cards">{[['Fleet vehicles',summary.total_vehicles],['Safety events',summary.total_safety_events],['Critical events',summary.events_by_severity.CRITICAL||0],['Hard braking',summary.hard_braking_count],['Sensor failures',summary.sensor_failure_count]].map(([name,value]) => <article key={String(name)}><small>{name}</small><strong>{value}</strong><span>Current dataset</span></article>)}</section>
-      <section className="charts"><Panel title="Events by severity"><BarChart data={chart(summary.events_by_severity)}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name"/><YAxis/><Tooltip/><Bar dataKey="value" fill="#f59e0b"/></BarChart></Panel><Panel title="Event type distribution"><BarChart data={chart(summary.events_by_event_type)}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name" angle={-18} textAnchor="end" height={55}/><YAxis/><Tooltip/><Bar dataKey="value" fill="#38bdf8"/></BarChart></Panel><Panel title="Software versions"><BarChart data={chart(summary.events_by_software_version)}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name"/><YAxis/><Tooltip/><Bar dataKey="value" fill="#a78bfa"/></BarChart></Panel></section>
-      <section className="spark-summary"><div className="section-head"><div><span className="eyebrow">PYSPARK BATCH SUMMARY</span><h2>Fleet telemetry health</h2></div><span className="badge">AGGREGATE DATA</span></div>{fleet.length ? <table><thead><tr><th>Vehicle</th><th>Records</th><th>Avg speed</th><th>Max speed</th><th>Sensor failures</th></tr></thead><tbody>{fleet.slice(0,10).map(row => <tr key={row.vehicle_id}><td>SD-{String(row.vehicle_id).padStart(3,'0')}</td><td>{row.telemetry_record_count.toLocaleString()}</td><td>{row.average_speed.toFixed(1)} mph</td><td>{row.max_speed.toFixed(1)} mph</td><td>{row.sensor_failure_count}</td></tr>)}</tbody></table> : <p>Run the PySpark pipeline to populate aggregate summaries.</p>}</section>
-      <section className="investigate"><div className="section-head"><div><span className="eyebrow">EVENT INVESTIGATION</span><h2>Recent safety events</h2></div><select value={severity} onChange={event => setSeverity(event.target.value)}><option value="">All severities</option>{['LOW','MEDIUM','HIGH','CRITICAL'].map(value => <option key={value}>{value}</option>)}</select></div><table><thead><tr><th>Timestamp</th><th>Vehicle</th><th>Event type</th><th>Severity</th><th>Version</th><th>Route</th></tr></thead><tbody>{shown.slice(0,100).map(event => <tr key={event.id} onClick={() => setSelected(event)}><td>{new Date(event.timestamp).toLocaleString()}</td><td>SD-{String(event.vehicle_id).padStart(3,'0')}</td><td>{event.event_type}</td><td><span className={'severity '+event.severity.toLowerCase()}>{event.severity}</span></td><td>{event.software_version}</td><td>{event.route_id}</td></tr>)}</tbody></table></section>
-    </>}
-    {selected && <aside><button onClick={() => setSelected(null)}>×</button><span className="eyebrow">EVENT {selected.id}</span><h2>{selected.event_type}</h2><p>{selected.description}</p><dl><dt>Severity</dt><dd>{selected.severity}</dd><dt>Vehicle</dt><dd>SD-{String(selected.vehicle_id).padStart(3,'0')}</dd><dt>Timestamp</dt><dd>{new Date(selected.timestamp).toLocaleString()}</dd><dt>Route / Version</dt><dd>{selected.route_id} / {selected.software_version}</dd></dl><div className="telemetry-note">Nearby telemetry is available through <code>/api/events/{selected.id}</code>.</div></aside>}
-  </main>;
+  const [selection, setSelection] = useState<Selection>({});
+  const [range, setRange] = useState<TimeRange>({ kind: 'years', from: FARS_FIRST, to: THIS_YEAR });
+  const [flags, setFlags] = useState<FlagDef[]>([]);
+  const [coverage, setCoverage] = useState<Coverage[]>([]);
+  const [stateFeatures, setStateFeatures] = useState<Boundary[]>([]);
+  const [countyFeatures, setCountyFeatures] = useState<Boundary[]>([]);
+  const [states, setStates] = useState<StateRow[]>([]);
+  const [counties, setCounties] = useState<CountyRow[]>([]);
+  const [cities, setCities] = useState<CityRow[]>([]);
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [crashes, setCrashes] = useState<CrashPoint[]>([]);
+  const [recent, setRecent] = useState<RecentSource[]>([]);
+  const [recentPoints, setRecentPoints] = useState<RecentPoint[]>([]);
+  const [selectedRoad, setSelectedRoad] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [dataMeta, setDataMeta] = useState<Meta | null>(null);  // static mode: when the data was exported
+
+  const fail = (reason: unknown) => setError(reason instanceof Error ? reason.message : 'Unable to load data');
+  const fars = farsYears(range);
+  const inArea = selection.countyCode !== undefined || !!selection.city;
+
+  useEffect(() => {
+    api.flags().then(setFlags).catch(fail);
+    api.coverage().then(setCoverage).catch(fail);
+    loadStates().then(setStateFeatures).catch(fail);
+    if (STATIC) meta().then(setDataMeta).catch(fail);
+  }, []);
+
+  // FARS (fatal crashes, to 2024) for the current place and the part of the range it covers.
+  useEffect(() => {
+    let current = true;
+    const keep = <T,>(set: (v: T) => void) => (v: T) => { if (current) set(v); };
+    setLoading(true);
+    setError(null);
+    setSelectedRoad(null);
+    setSummary(null);
+    setCrashes([]);
+    const jobs: Promise<unknown>[] = [];
+    if (selection.stateCode !== undefined) jobs.push(loadCounties().then(keep(setCountyFeatures)));
+    if (!fars) {
+      setStates([]); setCounties([]); setCities([]);
+    } else if (selection.stateCode === undefined) {
+      jobs.push(api.states(fars).then(keep(setStates)));
+    } else {
+      jobs.push(api.counties(selection, fars).then(keep(setCounties)));
+      jobs.push(api.summary(selection, fars).then(keep(setSummary)));
+      if (!inArea) jobs.push(api.cities(selection, fars).then(keep(setCities)));
+      if (inArea) jobs.push(api.crashes(selection, fars).then(keep(setCrashes)));
+    }
+    Promise.all(jobs).catch(e => current && fail(e)).finally(() => current && setLoading(false));
+    return () => { current = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection, fars?.from, fars?.to]);
+
+  // The area on screen as a bounding box, for the recent-data queries.
+  const bbox = useMemo<BBox | null>(() => {
+    if (selection.stateCode === undefined) return null;
+    const prefix = String(selection.stateCode).padStart(2, '0');
+    if (selection.countyCode !== undefined) {
+      const county = countyFeatures.find(f => f.id === prefix + String(selection.countyCode).padStart(3, '0'));
+      return county ? boundsToBBox(L.geoJSON(county).getBounds()) : null;
+    }
+    if (selection.city) {
+      if (crashes.length) return boundsToBBox(L.latLngBounds(crashes.map(c => [c.latitude, c.longitude] as [number, number])), 0.02);
+      const city = cities.find(c => c.name === selection.city);
+      return city?.latitude != null ? [city.longitude! - 0.15, city.latitude - 0.12, city.longitude! + 0.15, city.latitude + 0.12] : null;
+    }
+    const state = stateFeatures.find(f => Number(f.id) === selection.stateCode);
+    return state ? (selection.stateCode === 2 ? [-179.9, 51, -129.9, 71.5] : boundsToBBox(L.geoJSON(state).getBounds())) : null;
+  }, [selection, countyFeatures, stateFeatures, crashes, cities]);
+
+  // Newer-than-FARS data: per-source counts for the area, and points when zoomed into one.
+  // Dots once zoomed into a county/city; in live mode everywhere; and statewide when FARS has nothing for the range.
+  const wantPoints = inArea || range.kind === 'live' || (!fars && selection.stateCode !== undefined);
+  const rangeKey = range.kind === 'live' ? 'live' : `${range.from}-${range.to}`;
+  useEffect(() => {
+    let current = true;
+    const box = bbox ?? undefined;
+    if (selection.stateCode !== undefined && !box) return;  // wait for boundaries
+    api.recentSummary(range, box).then(rows => current && setRecent(rows)).catch(e => current && fail(e));
+    if (wantPoints) api.recentPoints(range, box ?? US_BBOX).then(rows => current && setRecentPoints(rows)).catch(e => current && fail(e));
+    else setRecentPoints([]);
+    return () => { current = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bbox?.join(','), rangeKey, wantPoints, selection.stateCode]);
+
+  // Live mode refreshes itself every 5 minutes (not in static mode: the files don't change).
+  useEffect(() => {
+    if (range.kind !== 'live' || STATIC) return;
+    const timer = window.setInterval(() => setRange({ kind: 'live' }), 5 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [range.kind]);
+
+  const flagNames = useMemo(() => Object.fromEntries(flags.filter(f => f.source === 'fars').map(f => [f.id, f])), [flags]);
+  const recentStates = useMemo(() => {
+    const out = new Map<number, string[]>();
+    coverage.forEach(c => c.states.forEach(s => out.set(s, [...(out.get(s) ?? []), c.label])));
+    return out;
+  }, [coverage]);
+
+  return <div className="app">
+    <div className="map-wrap">
+      <CrashMap selection={selection} farsActive={!!fars} stateFeatures={stateFeatures} countyFeatures={countyFeatures} states={states} counties={counties}
+        cities={cities} crashes={crashes} recentPoints={recentPoints} recentStates={recentStates} coverage={coverage} flagNames={flagNames} selectedRoad={selectedRoad}
+        onState={(stateCode, stateName) => setSelection({ stateCode, stateName })}
+        onCounty={(countyCode, countyName) => setSelection({ stateCode: selection.stateCode, stateName: selection.stateName, countyCode, countyName })}
+        onCity={city => setSelection({ stateCode: selection.stateCode, stateName: selection.stateName, city })} />
+      <Legend showFatal={!!fars && inArea} showRecords={recentPoints.some(r => r.kind === 'record')} showLive={recentPoints.some(r => r.kind === 'live')} />
+      {error && <div className="error">{STATIC ? 'Could not load the map data' : <>Could not load data from <code>{API}</code></>}: {error}</div>}
+    </div>
+    <SidePanel selection={selection} range={range} fars={fars} states={states} counties={counties} cities={cities} summary={summary}
+      recent={recent} recentPoints={recentPoints.length} dataMeta={dataMeta} coverage={coverage} flagNames={flagNames} loading={loading} shownCrashes={crashes.length}
+      selectedRoad={selectedRoad} onSelect={setSelection} onRange={setRange} onRoad={setSelectedRoad}
+      onSource={source => {
+        const state = coverage.find(c => c.source === source)?.states[0];
+        const feature = stateFeatures.find(f => Number(f.id) === state);
+        if (state !== undefined) setSelection({ stateCode: state, stateName: feature?.properties.name });
+      }} />
+  </div>;
 }
-function Panel({ title, children }: { title:string; children:any }) { return <article className="panel"><h3>{title}</h3><ResponsiveContainer width="100%" height={220}>{children}</ResponsiveContainer></article>; }
-function SafetyEvaluations({ evaluations }: { evaluations: Evaluation[] }) { const [severity,setSeverity] = useState(''); const [selected,setSelected] = useState<Evaluation|null>(null); const shown = evaluations.filter(item => !severity || item.severity === severity); return <section className="spark-summary"><div className="section-head"><div><span className="eyebrow">SAFETY RULE ENGINE</span><h2>Triggered evaluations</h2></div><select value={severity} onChange={event => setSeverity(event.target.value)}><option value="">All severities</option>{['LOW','MEDIUM','HIGH','CRITICAL'].map(value => <option key={value}>{value}</option>)}</select></div>{shown.length ? <table><thead><tr><th>Timestamp</th><th>Vehicle</th><th>Rule</th><th>Severity</th><th>Route</th><th>Version</th></tr></thead><tbody>{shown.slice(0,20).map(evaluation => <tr key={evaluation.id} onClick={() => setSelected(evaluation)}><td>{new Date(evaluation.timestamp).toLocaleString()}</td><td>SD-{String(evaluation.vehicle_id).padStart(3,'0')}</td><td>{evaluation.rule_name}</td><td><span className={'severity '+evaluation.severity.toLowerCase()}>{evaluation.severity}</span></td><td>{evaluation.route_id}</td><td>{evaluation.software_version}</td></tr>)}</tbody></table> : <p>No triggered rule evaluations found.</p>}{selected && <div className="telemetry-note"><strong>Safety Evaluation:</strong> {selected.rule_name} ({selected.severity})<br/>Vehicle SD-{String(selected.vehicle_id).padStart(3,'0')} · {new Date(selected.timestamp).toLocaleString()}<br/>{selected.evidence.map((item,index) => <span key={index}><br/>{item.field} {item.operator} {String(item.threshold)} — observed {String(item.observed)}</span>)}</div>}</section>; }
-createRoot(document.getElementById('root')!).render(<App/>);
+
+createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);

@@ -1,31 +1,50 @@
-from datetime import datetime
+from datetime import date, datetime
+
 from pydantic import BaseModel, ConfigDict
 
-class VehicleOut(BaseModel):
+
+class FarsCrashOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: int; vehicle_name: str; software_version: str; status: str
+    id: str
+    year: int
+    state_name: str | None
+    county_name: str | None
+    city_name: str | None
+    crash_date: date | None
+    hour: int | None
+    latitude: float | None
+    longitude: float | None
+    fatalities: int
+    pedestrians: int | None
+    vehicles: int | None
+    weather: str | None
+    light_condition: str | None
+    junction: str | None
+    road_class: str | None
+    road_name: str | None
+    first_harmful_event: str | None
+    speeding_involved: bool
+    drinking_driver_involved: bool
+    max_speed_limit_mph: int | None
+    flags: list[str] = []
 
-class TelemetryOut(BaseModel):
+
+class NycCrashOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: int; vehicle_id: int; timestamp: datetime; speed_mph: float; acceleration_mps2: float
-    steering_angle: float; brake_pressure: float; battery_percent: float; sensor_status: str; route_id: str
-
-class EventOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int; vehicle_id: int; timestamp: datetime; event_type: str; severity: str
-    description: str; software_version: str; route_id: str
-
-class EventDetail(EventOut):
-    vehicle: VehicleOut
-    nearby_telemetry: list[TelemetryOut]
-
-class SparkVehicleSummaryOut(BaseModel):
-    vehicle_id: int; telemetry_record_count: int; average_speed: float; max_speed: float
-    hard_braking_count: int; rapid_acceleration_count: int; sensor_failure_count: int
-
-class SparkRouteSummaryOut(BaseModel):
-    route_id: str; telemetry_record_count: int; average_speed: float; safety_condition_count: int
-
-class SafetyEvaluationOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int; telemetry_id: int; vehicle_id: int; timestamp: datetime; rule_id: str; rule_name: str; severity: str; evidence: list[dict]; software_version: str; route_id: str
+    collision_id: str
+    crash_datetime: datetime
+    borough: str | None
+    latitude: float | None
+    longitude: float | None
+    on_street: str | None
+    cross_street: str | None
+    off_street: str | None
+    persons_injured: int
+    persons_killed: int
+    pedestrians_injured: int
+    pedestrians_killed: int
+    cyclists_injured: int
+    cyclists_killed: int
+    vehicle_types: list[str]
+    contributing_factors: list[str] = []
+    flags: list[str] = []

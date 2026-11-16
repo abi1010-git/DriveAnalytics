@@ -1,10 +1,6 @@
-# SafeDrive screenshots
+# Screenshots
 
-This directory intentionally contains no fabricated screenshots. After starting SafeDrive, capture and optionally commit:
+Real captures of the running app with the full FARS 2020–2024 load:
 
-1. `dashboard-overview.png` — summary cards, charts, and recent events.
-2. `safety-evaluations.png` — rule-triggered evaluations with filters.
-3. `evaluation-detail.png` — an evaluation opened to show rule evidence.
-4. `spark-fleet-summary.png` — the Spark-derived fleet aggregation section.
-
-Use browser screenshots at a consistent viewport and remove personal or local credential information before publishing.
+- `us-map.jpg`: the opening view, with states shaded by traffic deaths.
+- `wayne-county-i94.jpg`: Wayne County, Michigan, with I-94's fatal crashes highlighted.

@@ -1,30 +1,46 @@
-from datetime import datetime, timedelta
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, joinedload
-from ..models import Vehicle, Telemetry, SafetyEvent
+from sqlalchemy.orm import Session
 
-def filtered_events(db: Session, **filters):
-    stmt = select(SafetyEvent).order_by(SafetyEvent.timestamp.desc())
-    for field in ("vehicle_id", "event_type", "severity", "software_version", "route_id"):
-        if filters.get(field) not in (None, ""):
-            stmt = stmt.where(getattr(SafetyEvent, field) == filters[field])
-    if filters.get("start_date"): stmt = stmt.where(SafetyEvent.timestamp >= filters["start_date"])
-    if filters.get("end_date"): stmt = stmt.where(SafetyEvent.timestamp <= filters["end_date"])
-    return db.scalars(stmt).all()
+from ..models import CrashFlag, FarsCrash, IngestRun, NycCrash
+from .rule_engine import RuleSet
 
-def summary(db: Session):
-    def counts(field):
-        rows = db.execute(select(field, func.count()).group_by(field)).all()
-        return {str(k): v for k, v in rows}
-    return {"total_telemetry_records": db.scalar(select(func.count(Telemetry.id))) or 0,
-            "total_safety_events": db.scalar(select(func.count(SafetyEvent.id))) or 0,
-            "total_vehicles": db.scalar(select(func.count(Vehicle.id))) or 0,
-            "events_by_severity": counts(SafetyEvent.severity), "events_by_event_type": counts(SafetyEvent.event_type),
-            "events_by_software_version": counts(SafetyEvent.software_version), "events_per_vehicle": counts(SafetyEvent.vehicle_id),
-            "hard_braking_count": db.scalar(select(func.count()).where(SafetyEvent.event_type == "HARD_BRAKING")) or 0,
-            "sensor_failure_count": db.scalar(select(func.count()).where(SafetyEvent.event_type == "SENSOR_FAILURE")) or 0}
 
-def nearby(db: Session, event: SafetyEvent):
-    return db.scalars(select(Telemetry).where(Telemetry.vehicle_id == event.vehicle_id,
-        Telemetry.timestamp.between(event.timestamp - timedelta(minutes=10), event.timestamp + timedelta(minutes=10)))
-        .order_by(Telemetry.timestamp)).all()
+def _last_run(db: Session, source: str):
+    return db.scalar(select(IngestRun).where(IngestRun.source == source).order_by(IngestRun.finished_at.desc()).limit(1))
+
+
+def dataset_summary(db: Session) -> dict:
+    fars_years = db.execute(select(FarsCrash.year, func.count(), func.sum(FarsCrash.fatalities)).group_by(FarsCrash.year).order_by(FarsCrash.year)).all()
+    nyc_count, nyc_first, nyc_last, nyc_located = db.execute(
+        select(func.count(), func.min(NycCrash.crash_datetime), func.max(NycCrash.crash_datetime), func.count(NycCrash.latitude))).one()
+    fars_run, nyc_run = _last_run(db, "fars"), _last_run(db, "nyc")
+    return {
+        "fars": {
+            "name": "NHTSA Fatality Analysis Reporting System",
+            "coverage": "Every fatal motor vehicle crash on US public roads",
+            "years": [{"year": y, "crashes": c, "fatalities": f or 0} for y, c, f in fars_years],
+            "last_loaded": fars_run.finished_at if fars_run else None,
+        },
+        "nyc": {
+            "name": "NYC Open Data - Motor Vehicle Collisions (Crashes)",
+            "coverage": "Every police-reported crash in New York City",
+            "crashes": nyc_count,
+            "with_coordinates": nyc_located,
+            "first_crash": nyc_first,
+            "last_crash": nyc_last,
+            "last_loaded": nyc_run.finished_at if nyc_run else None,
+        },
+    }
+
+
+def flag_counts(db: Session, rules: RuleSet) -> list[dict]:
+    counts = dict(((s, f), n) for s, f, n in db.execute(select(CrashFlag.source, CrashFlag.flag_id, func.count()).group_by(CrashFlag.source, CrashFlag.flag_id)).all())
+    return [{**rule.model_dump(), "crashes_flagged": counts.get((rule.source, rule.id), 0)} for rule in rules.rules]
+
+
+def flags_for(db: Session, source: str, crash_ids: list[str]) -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {cid: [] for cid in crash_ids}
+    if crash_ids:
+        for cid, flag in db.execute(select(CrashFlag.crash_id, CrashFlag.flag_id).where(CrashFlag.source == source, CrashFlag.crash_id.in_(crash_ids))):
+            out[cid].append(flag)
+    return out
