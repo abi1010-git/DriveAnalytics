@@ -72,3 +72,29 @@ ol { list-style: none; margin: 0; padding: 0; }
 }
 .dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(0.8) contrast(0.85) saturate(0.6); }
 .road-name small { display: block; font-weight: 400; font-size: 11px; color: var(--muted); }
+.time { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 6px; font-size: 13px; color: var(--muted); }
+.time label { display: flex; gap: 6px; align-items: center; }
+.time .live { margin-left: auto; display: flex; gap: 7px; align-items: center; background: var(--bg); border: 1px solid #33445c; border-radius: 16px; padding: 6px 12px; cursor: pointer; color: var(--text); }
+.time .live.on { border-color: #c084fc; background: #2a1840; }
+.time .live .dot { width: 8px; height: 8px; border-radius: 50%; background: #c084fc; }
+.time .live.on .dot { animation: blink 1.4s infinite; }
+@keyframes blink { 50% { opacity: 0.25; } }
+.block-title { margin-top: 18px; }
+.block-title small { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 6px; }
+.note { background: #0f1d33; border: 1px solid #1e3a5f; border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #b6c6db; margin: 14px 0; }
+.recent ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.recent li > button, .recent li > .row { display: grid; grid-template-columns: 10px 1fr; gap: 10px; align-items: start; width: 100%; text-align: left; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; }
+.recent li > button { cursor: pointer; }
+.recent li > button:hover { border-color: var(--accent); }
+.recent li i { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; }
+.recent li b { display: block; font-weight: 600; }
+.recent li span { display: block; font-size: 12px; }
+.legend { position: absolute; z-index: 800; left: 10px; bottom: 26px; display: flex; flex-wrap: wrap; gap: 6px 12px; background: rgba(11, 17, 32, 0.88); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font-size: 12px; }
+.legend:empty { display: none; }
+.legend span { display: flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.kind { display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; border-radius: 8px; padding: 1px 7px; margin-bottom: 3px; }
+.kind.live { background: #f3e8ff; color: #6b21a8; }
+.kind.record { background: #e0f2fe; color: #075985; }
+.crash-popup strong { display: block; }
+path.pulse { animation: blink 1.6s infinite; }
