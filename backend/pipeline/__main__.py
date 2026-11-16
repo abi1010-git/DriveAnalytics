@@ -10,6 +10,7 @@
     python -m pipeline live                       poll every live incident feed once
     python -m pipeline live --every 10            keep polling every 10 minutes
     python -m pipeline schedule                   keep everything current: live every 10 min, the rest daily
+    python -m pipeline export --out DIR           write the static site's JSON files (docs/STATIC_SITE.md)
 
 Set DATABASE_URL to load into PostgreSQL; the default is a local SQLite file.
 """
@@ -57,6 +58,8 @@ def main(argv: list[str] | None = None) -> None:
     schedule_cmd.add_argument("--live-minutes", type=float, default=10)
     schedule_cmd.add_argument("--daily-hours", type=float, default=24)
     schedule_cmd.add_argument("--jobs", default="live,nyc,chicago,records", help="comma-separated subset to run")
+    export_cmd = commands.add_parser("export", help="write JSON files for the static site")
+    export_cmd.add_argument("--out", type=Path, required=True)
     live_cmd = commands.add_parser("live", help="poll live traffic-incident feeds")
     live_cmd.add_argument("--source", action="append", help="only these sources (default: all)")
     live_cmd.add_argument("--every", type=float, metavar="MINUTES", help="keep polling on this interval")
@@ -72,6 +75,16 @@ def main(argv: list[str] | None = None) -> None:
         if not jobs:
             parser.error("no jobs selected; choose from live, nyc, chicago, records")
         run_schedule(jobs)
+        return
+    if args.command == "export":
+        from .export import run as export_run
+        started = time.perf_counter()
+        with SessionLocal() as db:
+            meta = export_run(db, args.out)
+        sizes = sum(f.stat().st_size for f in args.out.rglob("*.json"))
+        print(f"export: {meta['fars_crashes']:,} FARS crashes, {meta['grid_cells']:,} grid cells, {meta['dots']:,} dots in "
+              f"{len(meta['tiles'])} tiles, {meta['live_points']:,} live points; {sizes / 1e6:.1f} MB in {args.out} "
+              f"({time.perf_counter() - started:.0f}s)")
         return
     if args.command == "records":
         from . import records

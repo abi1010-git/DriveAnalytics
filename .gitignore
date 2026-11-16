@@ -24,3 +24,4 @@ data/processed/
 backend/data/raw/
 backend/data/processed/
 .claude/launch.json
+frontend/public/data/

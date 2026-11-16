@@ -1,7 +1,9 @@
 {
+  "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build"
+    "build": "tsc -b && vite build",
+    "test": "node --experimental-strip-types --test tests/static.test.ts"
   },
   "dependencies": {
     "leaflet": "1.9.4",

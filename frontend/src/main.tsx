@@ -6,11 +6,13 @@ import L from 'leaflet';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { BBox, CityRow, CountyRow, Coverage, CrashPoint, FlagDef, RecentPoint, RecentSource, Selection, StateRow, Summary, TimeRange } from './api';
-import { API, FARS_FIRST, THIS_YEAR, api, farsYears } from './api';
+import { API, FARS_FIRST, STATIC, THIS_YEAR, api, farsYears } from './api';
 import { CrashMap, Legend } from './components/CrashMap';
 import { SidePanel } from './components/SidePanel';
 import type { Boundary } from './geo';
 import { loadCounties, loadStates } from './geo';
+import type { Meta } from './static';
+import { meta } from './static';
 import './style.css';
 
 const US_BBOX: BBox = [-179.9, 17.5, -64.5, 71.5];
@@ -36,6 +38,7 @@ function App() {
   const [selectedRoad, setSelectedRoad] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dataMeta, setDataMeta] = useState<Meta | null>(null);  // static mode: when the data was exported
 
   const fail = (reason: unknown) => setError(reason instanceof Error ? reason.message : 'Unable to load data');
   const fars = farsYears(range);
@@ -45,6 +48,7 @@ function App() {
     api.flags().then(setFlags).catch(fail);
     api.coverage().then(setCoverage).catch(fail);
     loadStates().then(setStateFeatures).catch(fail);
+    if (STATIC) meta().then(setDataMeta).catch(fail);
   }, []);
 
   // FARS (fatal crashes, to 2024) for the current place and the part of the range it covers.
@@ -105,9 +109,9 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bbox?.join(','), rangeKey, wantPoints, selection.stateCode]);
 
-  // Live mode refreshes itself every 5 minutes.
+  // Live mode refreshes itself every 5 minutes (not in static mode: the files don't change).
   useEffect(() => {
-    if (range.kind !== 'live') return;
+    if (range.kind !== 'live' || STATIC) return;
     const timer = window.setInterval(() => setRange({ kind: 'live' }), 5 * 60 * 1000);
     return () => window.clearInterval(timer);
   }, [range.kind]);
@@ -127,10 +131,10 @@ function App() {
         onCounty={(countyCode, countyName) => setSelection({ stateCode: selection.stateCode, stateName: selection.stateName, countyCode, countyName })}
         onCity={city => setSelection({ stateCode: selection.stateCode, stateName: selection.stateName, city })} />
       <Legend showFatal={!!fars && inArea} showRecords={recentPoints.some(r => r.kind === 'record')} showLive={recentPoints.some(r => r.kind === 'live')} />
-      {error && <div className="error">Could not load data from <code>{API}</code>: {error}</div>}
+      {error && <div className="error">{STATIC ? 'Could not load the map data' : <>Could not load data from <code>{API}</code></>}: {error}</div>}
     </div>
     <SidePanel selection={selection} range={range} fars={fars} states={states} counties={counties} cities={cities} summary={summary}
-      recent={recent} recentPoints={recentPoints.length} coverage={coverage} flagNames={flagNames} loading={loading} shownCrashes={crashes.length}
+      recent={recent} recentPoints={recentPoints.length} dataMeta={dataMeta} coverage={coverage} flagNames={flagNames} loading={loading} shownCrashes={crashes.length}
       selectedRoad={selectedRoad} onSelect={setSelection} onRange={setRange} onRoad={setSelectedRoad}
       onSource={source => {
         const state = coverage.find(c => c.source === source)?.states[0];

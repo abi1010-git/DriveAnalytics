@@ -1,6 +1,7 @@
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
 import type { CityRow, Coverage, CountyRow, FlagDef, RecentSource, Selection, StateRow, Summary, TimeRange } from '../api';
 import { FARS_FIRST, FARS_LAST, FIRST_YEAR, THIS_YEAR, ago, fmt, parseTime } from '../api';
+import type { Meta } from '../static';
 import { COLORS, titleCase } from './CrashMap';
 
 const YEARS = Array.from({ length: THIS_YEAR - FIRST_YEAR + 1 }, (_, i) => THIS_YEAR - i);
@@ -11,6 +12,7 @@ type Props = {
   fars: { from: number; to: number } | null;
   recent: RecentSource[];
   recentPoints: number;
+  dataMeta: Meta | null;  // set in static mode only
   coverage: Coverage[];
   onRange: (r: TimeRange) => void;
   onSource: (source: string) => void;
@@ -45,10 +47,11 @@ export function SidePanel(p: Props) {
     <div className="head">
       <h1>{place}</h1>
     </div>
+    {p.dataMeta && <p className="muted">Data as of {when(p.dataMeta.generated_at)}</p>}
 
     <TimeControls range={p.range} onRange={p.onRange} />
 
-    <RecentSection recent={p.recent} range={p.range} shownPoints={p.recentPoints} inArea={inArea} atUS={sel.stateCode === undefined} onSource={p.onSource} />
+    <RecentSection recent={p.recent} range={p.range} shownPoints={p.recentPoints} dataMeta={p.dataMeta} inArea={inArea} atUS={sel.stateCode === undefined} onSource={p.onSource} />
 
     {p.fars ? <>
       <h2 className="block-title">Fatal crashes, {p.fars.from === p.fars.to ? p.fars.from : `${p.fars.from}–${p.fars.to}`} <small>NHTSA FARS · all US</small></h2>
@@ -142,6 +145,7 @@ function Ranked({ title, hint, rows }: { title: string; hint?: string; rows: { k
 }
 
 const pct = (part: number, whole: number) => `${Math.round((100 * part) / Math.max(whole, 1))}%`;
+const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 const sum = (rows: { crashes: number; deaths: number }[]) => rows.reduce((t, r) => ({ crashes: t.crashes + r.crashes, deaths: t.deaths + r.deaths }), { crashes: 0, deaths: 0 });
 
 
@@ -159,11 +163,14 @@ function TimeControls({ range, onRange }: { range: TimeRange; onRange: (r: TimeR
   </div>;
 }
 
-function RecentSection({ recent, range, shownPoints, inArea, atUS, onSource }: { recent: RecentSource[]; range: TimeRange; shownPoints: number; inArea: boolean; atUS: boolean; onSource: (s: string) => void }) {
+function RecentSection({ recent, range, shownPoints, dataMeta, inArea, atUS, onSource }: { recent: RecentSource[]; range: TimeRange; shownPoints: number; dataMeta: Meta | null; inArea: boolean; atUS: boolean; onSource: (s: string) => void }) {
   if (!recent.length) return null;
   const live = range.kind === 'live';
+  // Static exports keep dots only for the last dot_days; counts still cover every year.
+  const dotsCut = dataMeta && range.kind === 'years' && `${range.from}-01-01` < dataMeta.dots_since && (inArea || shownPoints > 0);
   return <section className="recent">
     <h2>{live ? 'Reported in the last 24 hours' : 'Newer & local data'}</h2>
+    {dataMeta && live && <p className="muted">Last 24 hours before {when(dataMeta.generated_at)}.</p>}
     {!atUS && <p className="muted">Counted inside the rectangle around this area, so it can include a little of its neighbours.</p>}
     <ul>
       {recent.map(r => {
@@ -182,6 +189,7 @@ function RecentSection({ recent, range, shownPoints, inArea, atUS, onSource }: {
     </ul>
     {(inArea || live) && shownPoints > 0 && <p className="muted">Showing the newest {fmt(shownPoints)} with a location on the map.</p>}
     {!inArea && !live && !atUS && !shownPoints && <p className="muted">Open a county or city to see these as dots.</p>}
+    {dotsCut && <p className="muted">Dots: {dataMeta.dot_days === 365 ? 'last 12 months' : `last ${dataMeta.dot_days} days`} only; counts cover the whole range.</p>}
     <p className="muted">Crash reports are filed police reports with injury counts. Live incidents are first reports from dispatch and traffic systems: minutes old but unverified.</p>
   </section>;
 }

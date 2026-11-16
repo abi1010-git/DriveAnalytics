@@ -1,4 +1,8 @@
+import { staticApi } from './static';
+
 export const API = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+// Built for GitHub Pages: read exported JSON files instead of calling the API (see static.ts).
+export const STATIC = import.meta.env.VITE_STATIC === '1';
 
 // Where on the map we are. Time is separate (TimeRange) so changing one never resets the other.
 export type Selection = { stateCode?: number; stateName?: string; countyCode?: number; countyName?: string; city?: string };
@@ -68,7 +72,7 @@ function recentQuery(range: TimeRange, bbox?: BBox, extra: Record<string, string
   return params.toString();
 }
 
-export const api = {
+const httpApi = {
   flags: () => get<FlagDef[]>('/api/risk-flags?counts=false'),
   states: (years: Years) => get<StateRow[]>(`/api/map/states?${query({ years })}`),
   counties: (sel: Selection, years: Years) => get<CountyRow[]>(`/api/map/counties?${query({ stateCode: sel.stateCode, years })}`),
@@ -79,6 +83,8 @@ export const api = {
   recentSummary: (range: TimeRange, bbox?: BBox) => get<RecentSource[]>(`/api/recent/summary?${recentQuery(range, bbox, range.kind === 'live' ? { all_incidents: 'true' } : {})}`),
   recentPoints: (range: TimeRange, bbox: BBox) => get<RecentPoint[]>(`/api/recent/points?${recentQuery(range, bbox, { limit: 3000, ...(range.kind === 'live' ? { all_incidents: 'true' } : {}) })}`),
 };
+
+export const api: typeof httpApi = STATIC ? staticApi : httpApi;
 
 /** Live feeds store UTC; city crash reports store the city's local time. */
 export function parseTime(point: { time: string; kind: 'record' | 'live' }): Date {
