@@ -165,7 +165,7 @@ class LocalCrash(Base):
 
     __tablename__ = "local_crashes"
     source: Mapped[str] = mapped_column(String(32), primary_key=True)  # e.g. "chicago"
-    source_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    source_id: Mapped[str] = mapped_column(String(160), primary_key=True)  # Chicago ids are 128 chars
     crash_datetime: Mapped[datetime] = mapped_column(DateTime, index=True)  # local time of the city, as published
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)

@@ -4,6 +4,7 @@
     python -m pipeline nyc                        download all NYC crashes and load them
     python -m pipeline nyc --since 2026-11-01     only rows created or updated on/after a date
     python -m pipeline nyc --file path.jsonl.gz   load an already-downloaded file
+    python -m pipeline chicago [--since DATE]     download and load Chicago crash records
     python -m pipeline live                       poll every live incident feed once
     python -m pipeline live --every 10            keep polling every 10 minutes
 
@@ -12,7 +13,7 @@ Set DATABASE_URL to load into PostgreSQL; the default is a local SQLite file.
 import argparse
 import sys
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -20,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.services.rule_engine import load_rules  # noqa: E402
 
-from . import fars, nyc  # noqa: E402
+from . import chicago, fars, nyc  # noqa: E402
 from .common import RAW_DIR  # noqa: E402
 
 
@@ -42,10 +43,15 @@ def main(argv: list[str] | None = None) -> None:
     nyc_cmd.add_argument("--since", type=date.fromisoformat, help="only rows updated on/after this date (YYYY-MM-DD)")
     nyc_cmd.add_argument("--file", type=Path, help="load this raw .jsonl.gz instead of downloading")
     nyc_cmd.add_argument("--redownload", action="store_true")
+    chicago_cmd = commands.add_parser("chicago", help="load City of Chicago traffic crash records")
+    chicago_cmd.add_argument("--since", type=date.fromisoformat, help="only rows updated on/after this date (YYYY-MM-DD)")
+    chicago_cmd.add_argument("--file", type=Path, help="load this raw .jsonl.gz instead of downloading")
+    chicago_cmd.add_argument("--redownload", action="store_true")
     live_cmd = commands.add_parser("live", help="poll live traffic-incident feeds")
     live_cmd.add_argument("--source", action="append", help="only these sources (default: all)")
     live_cmd.add_argument("--every", type=float, metavar="MINUTES", help="keep polling on this interval")
     live_cmd.add_argument("--backfill-days", type=float, default=7, help="history to fetch the first time a source is polled")
+    live_cmd.add_argument("--since", type=date.fromisoformat, help="re-read incremental feeds from this date (one-off history backfill)")
     args = parser.parse_args(argv)
 
     Base.metadata.create_all(engine)
@@ -56,12 +62,19 @@ def main(argv: list[str] | None = None) -> None:
         if unknown:
             parser.error(f"unknown source(s): {', '.join(sorted(unknown))}; choose from {', '.join(ADAPTERS)}")
         adapters = [ADAPTERS[name] for name in (args.source or ADAPTERS)]
-        run(SessionLocal, adapters, every_minutes=args.every, backfill=timedelta(days=args.backfill_days))
+        since = datetime(args.since.year, args.since.month, args.since.day) if args.since else None
+        run(SessionLocal, adapters, every_minutes=args.every, backfill=timedelta(days=args.backfill_days), since=since)
         return
     rules = load_rules()
     started = time.perf_counter()
     with SessionLocal() as db:
-        if args.command == "fars":
+        if args.command == "chicago":
+            since = args.since.isoformat() if args.since else None
+            path = args.file or chicago.fetch(args.raw_dir, since=since, force=args.redownload)
+            result = chicago.load_file(db, path, scope=f"since {since}" if since else "full")
+            print(f"chicago: {result['loaded']:,} crashes loaded, {result['skipped']:,} skipped, "
+                  f"{result['without_coordinates']:,} without usable coordinates")
+        elif args.command == "fars":
             for year in year_range(args.years):
                 path = fars.fetch(year, args.raw_dir, force=args.redownload)
                 count = fars.load_year(db, path, year, rules.for_source("fars"))

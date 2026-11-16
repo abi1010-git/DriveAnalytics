@@ -17,6 +17,10 @@ An adapter is a module (see pipeline/live/austin.py) that provides:
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Protocol
+from zoneinfo import ZoneInfo
+
+# Requires the tz database; on Windows that comes from the tzdata package (requirements-app.txt).
+PACIFIC = ZoneInfo("America/Los_Angeles")
 
 CATEGORIES = ("crash", "hazard", "stalled_vehicle", "closure", "fire", "other")
 FIELDS = ("source_id", "category", "raw_type", "description", "road", "latitude", "longitude",
@@ -53,3 +57,16 @@ def coordinate(lat, lon, bounds: tuple[float, float, float, float]) -> tuple[flo
         return None, None
     min_lat, min_lon, max_lat, max_lon = bounds
     return (lat, lon) if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon else (None, None)
+
+
+def local_to_utc(local: datetime, zone: ZoneInfo) -> datetime:
+    """Naive local wall-clock time in `zone` -> naive UTC. In the repeated autumn hour this
+    picks the first (daylight) occurrence, zoneinfo's default (fold=0)."""
+    if local.tzinfo:
+        return local.astimezone(timezone.utc).replace(tzinfo=None)
+    return local.replace(tzinfo=zone).astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def utc_to_local(value: datetime, zone: ZoneInfo) -> datetime:
+    """Naive UTC -> naive local wall-clock time in `zone` (for building source queries)."""
+    return value.replace(tzinfo=timezone.utc).astimezone(zone).replace(tzinfo=None)

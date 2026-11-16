@@ -25,13 +25,16 @@ def _since(db: Session, source: str, backfill: timedelta, now: datetime) -> date
     return newest or now - backfill
 
 
-def poll_source(db: Session, adapter, *, now: datetime | None = None, backfill: timedelta = timedelta(days=7), get=get_text) -> LivePoll:
+def poll_source(db: Session, adapter, *, now: datetime | None = None, backfill: timedelta = timedelta(days=7), get=get_text,
+                since: datetime | None = None) -> LivePoll:
     """Fetch one source once and upsert. Errors are recorded on the poll row, not raised, so
-    one broken feed never stops the others."""
+    one broken feed never stops the others. `since` overrides where an incremental feed resumes
+    (used for one-off history backfills)."""
     now = now or utcnow()
     poll = LivePoll(source=adapter.SOURCE, polled_at=now, fetched=0, inserted=0, updated=0, cleared=0)
     try:
-        raws = adapter.fetch(None if adapter.SNAPSHOT else _since(db, adapter.SOURCE, backfill, now), get)
+        start = None if adapter.SNAPSHOT else (since or _since(db, adapter.SOURCE, backfill, now))
+        raws = adapter.fetch(start, get)
         parsed = {}
         for raw in raws:
             record = adapter.parse(raw)
@@ -76,14 +79,15 @@ def poll_source(db: Session, adapter, *, now: datetime | None = None, backfill: 
     return poll
 
 
-def run(session_factory, adapters, *, every_minutes: float | None, backfill: timedelta, log=print) -> None:
+def run(session_factory, adapters, *, every_minutes: float | None, backfill: timedelta, since: datetime | None = None, log=print) -> None:
     while True:
         started = time.monotonic()
         for adapter in adapters:
             with session_factory() as db:
-                poll = poll_source(db, adapter, backfill=backfill)
+                poll = poll_source(db, adapter, backfill=backfill, since=since)
                 outcome = f"error: {poll.error}" if poll.error else f"{poll.fetched} fetched, {poll.inserted} new, {poll.updated} updated, {poll.cleared} cleared"
                 log(f"[{poll.polled_at:%Y-%m-%d %H:%M:%S}Z] live {adapter.SOURCE}: {outcome}")
+        since = None  # an explicit start applies to the first round only
         if every_minutes is None:
             return
         time.sleep(max(0.0, every_minutes * 60 - (time.monotonic() - started)))
