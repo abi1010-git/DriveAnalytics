@@ -56,6 +56,7 @@ def main(argv: list[str] | None = None) -> None:
     schedule_cmd = commands.add_parser("schedule", help="run forever: live feeds every 10 min, crash reports daily")
     schedule_cmd.add_argument("--live-minutes", type=float, default=10)
     schedule_cmd.add_argument("--daily-hours", type=float, default=24)
+    schedule_cmd.add_argument("--jobs", default="live,nyc,chicago,records", help="comma-separated subset to run")
     live_cmd = commands.add_parser("live", help="poll live traffic-incident feeds")
     live_cmd.add_argument("--source", action="append", help="only these sources (default: all)")
     live_cmd.add_argument("--every", type=float, metavar="MINUTES", help="keep polling on this interval")
@@ -66,7 +67,11 @@ def main(argv: list[str] | None = None) -> None:
     Base.metadata.create_all(engine)
     if args.command == "schedule":
         from .scheduler import build_jobs, run as run_schedule
-        run_schedule(build_jobs(SessionLocal, live_minutes=args.live_minutes, daily_hours=args.daily_hours))
+        wanted = {name.strip() for name in args.jobs.split(",")}
+        jobs = [job for job in build_jobs(SessionLocal, live_minutes=args.live_minutes, daily_hours=args.daily_hours) if job.name in wanted]
+        if not jobs:
+            parser.error("no jobs selected; choose from live, nyc, chicago, records")
+        run_schedule(jobs)
         return
     if args.command == "records":
         from . import records
