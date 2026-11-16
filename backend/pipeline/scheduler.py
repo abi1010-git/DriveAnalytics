@@ -70,10 +70,13 @@ def build_jobs(session_factory, *, live_minutes: float = 10, daily_hours: float 
         for name, spec in records.all_specs().items():
             try:
                 with session_factory() as db:
+                    last = _last_success(db, name)
+                    if last and utcnow() - last < timedelta(days=spec.refresh_days) - timedelta(hours=1):
+                        continue  # e.g. yearly datasets are re-read monthly, not daily
                     parts.append(f"{name} {update(db, spec, log=lambda *_: None)['loaded']:,}")
             except Exception as exc:  # noqa: BLE001 - one portal must not stop the rest
                 parts.append(f"{name} FAILED ({type(exc).__name__})")
-        return ", ".join(parts)
+        return ", ".join(parts) or "nothing due"
 
     day = timedelta(hours=daily_hours)
     return [Job("live", timedelta(minutes=live_minutes), live),

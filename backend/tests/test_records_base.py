@@ -94,3 +94,14 @@ def test_ckan_keyset_paging(tmp_path):
     assert [r["Collision Id"] for r in rows] == [1, 2, 3]
     assert calls[0] == 'SELECT * FROM "res-2026" WHERE ("Crash Date Time" >= \'2026-11-01 00:00:00\') ORDER BY "Collision Id" LIMIT 2'
     assert '("Collision Id" > 2)' in calls[1]
+
+
+def test_non_incremental_source_always_reloads(db, tmp_path):
+    spec = base.SourceSpec(**{**mc.SPEC.__dict__, "incremental": False})
+    seen = []
+    def get(url):
+        seen.append(parse_qs(urlparse(url).query).get("$where"))
+        return [mc_row("A")]
+    base.update(db, spec, raw_dir=tmp_path, get=get, log=lambda *_: None)
+    base.update(db, spec, raw_dir=tmp_path, get=get, log=lambda *_: None)
+    assert seen == [None, None]  # no date filter either time

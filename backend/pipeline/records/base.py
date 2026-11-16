@@ -57,6 +57,8 @@ class SourceSpec:
     overlap: timedelta = timedelta(days=3)  # re-read this much before the newest held record
     epoch_is_local: bool = False     # ArcGIS only: epoch values hold local wall time, not UTC
     reduce: Callable[[list[dict]], dict] | None = None  # combine several parsed rows of one crash (per-person data)
+    incremental: bool = True         # False: date_field can't filter (month-only/text dates), so always reload fully
+    refresh_days: float = 1          # how often the scheduler re-reads it (yearly datasets: 30)
     notes: str = ""                  # coverage caveats shown in docs
 
 
@@ -262,7 +264,7 @@ def newest_held(db: Session, spec: SourceSpec) -> datetime | None:
 def update(db: Session, spec: SourceSpec, *, full: bool = False, raw_dir: Path = RAW_DIR, get=get_json, log=print) -> dict:
     """Full load the first time (or with full=True); afterwards only rows from `overlap`
     before the newest crash held, so daily runs stay small."""
-    newest = None if full else newest_held(db, spec)
+    newest = None if full or not spec.incremental else newest_held(db, spec)
     since = newest - spec.overlap if newest else None
     path = fetch(spec, since, raw_dir=raw_dir, get=get, log=log)
     return load(db, spec, path, scope=f"since {since:%Y-%m-%d}" if since else "full")
