@@ -50,6 +50,8 @@ def test_reads_every_layer_and_dedupes(tmp_path):
     spec = base.SourceSpec(**{**utah.SPEC.__dict__, "urls": utah.SPEC.urls[:2]})
     seen = []
     def get(url):
+        if "returnCountOnly" in url:
+            return {"count": 2}
         seen.append(urlparse(url).path)
         cid = 1 if len(seen) == 1 else 2
         return {"features": [{"attributes": row(cid), "geometry": {"x": -111.9, "y": 40.7}},

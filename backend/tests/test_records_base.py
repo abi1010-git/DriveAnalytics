@@ -57,11 +57,27 @@ def test_arcgis_paging_merges_geometry(tmp_path):
               {"features": [{"attributes": {"ID": 3}, "geometry": {"x": -77.2, "y": 39.2}}]}]
     calls = []
     def get(url):
-        calls.append(parse_qs(urlparse(url).query))
+        query = parse_qs(urlparse(url).query)
+        if "returnCountOnly" in query:
+            return {"count": 3}
+        calls.append(query)
         return bodies[len(calls) - 1]
     rows = list(base.iter_raw(base.fetch(spec, None, raw_dir=tmp_path, get=get, log=lambda *_: None)))
     assert [r["ID"] for r in rows] == [1, 2, 3] and rows[0]["_lat"] == 39.1 and rows[1]["_lat"] is None
     assert calls[1]["resultOffset"] == ["2"] and calls[0]["outSR"] == ["4326"] and calls[0]["where"] == ["1=1"]
+
+
+def test_arcgis_short_read_fails_loudly(tmp_path):
+    import pytest
+    spec = base.SourceSpec(source="t", label="T", platform="arcgis", url="https://x/FeatureServer/0", date_field="D",
+                           parse=lambda r: r, states=[1], bbox=(-180, -90, 180, 90), page_size=2)
+    def get(url):  # first page full, then an empty page mid-way, while the server says 5 rows exist
+        query = parse_qs(urlparse(url).query)
+        if "returnCountOnly" in query:
+            return {"count": 5}
+        return {"features": [{"attributes": {"ID": 1}}, {"attributes": {"ID": 2}}]} if query["resultOffset"] == ["0"] else {"features": []}
+    with pytest.raises(IOError, match="read 2 of 5"):
+        base.fetch(spec, None, raw_dir=tmp_path, get=get, log=lambda *_: None)
 
 
 def test_update_full_then_incremental_with_dedupe(db, tmp_path):

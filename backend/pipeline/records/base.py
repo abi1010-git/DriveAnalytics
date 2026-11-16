@@ -118,10 +118,23 @@ def sane(when: datetime | None, earliest: int = 2000) -> datetime | None:
 
 # ---------- fetching ----------
 
-def get_json(url: str, timeout: int = 120):
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.load(response)
+def get_json(url: str, timeout: int = 120, attempts: int = 4):
+    """GET JSON, retrying timeouts, resets and 5xx responses with backoff (public portals drop
+    connections now and then; a full Virginia load is ~460 requests)."""
+    import time
+    import urllib.error
+    for attempt in range(1, attempts + 1):
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as exc:
+            if exc.code < 500 or attempt == attempts:
+                raise
+        except (urllib.error.URLError, ConnectionError, TimeoutError, json.JSONDecodeError):
+            if attempt == attempts:
+                raise
+        time.sleep(5 * 2 ** (attempt - 1))
 
 
 def _socrata_pages(spec: SourceSpec, since: datetime | None, get) -> Iterator[list[dict]]:
@@ -164,6 +177,12 @@ def _arcgis_pages(spec: SourceSpec, since: datetime | None, get) -> Iterator[lis
             if not rows or not (body.get("exceededTransferLimit") or len(rows) >= spec.page_size):
                 break
             offset += len(rows)
+        # A server that hiccups can return an empty page mid-way, which looks like "done".
+        # Compare against the server's own count so a short read fails loudly instead.
+        count_params = {"where": params["where"], "returnCountOnly": "true", "f": "json"}
+        expected = get(f"{layer.rstrip('/')}/query?{urllib.parse.urlencode(count_params)}").get("count")
+        if expected is not None and offset + len(rows) < expected:
+            raise IOError(f"{spec.source}: read {offset + len(rows):,} of {expected:,} rows from {layer}")
 
 
 def _ckan_pages(spec: SourceSpec, since: datetime | None, get) -> Iterator[list[dict]]:
