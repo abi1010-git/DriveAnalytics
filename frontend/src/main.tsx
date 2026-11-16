@@ -130,7 +130,10 @@ function App() {
         onState={(stateCode, stateName) => setSelection({ stateCode, stateName })}
         onCounty={(countyCode, countyName) => setSelection({ stateCode: selection.stateCode, stateName: selection.stateName, countyCode, countyName })}
         onCity={city => setSelection({ stateCode: selection.stateCode, stateName: selection.stateName, city })} />
-      <Legend showFatal={!!fars && inArea} showRecords={recentPoints.some(r => r.kind === 'record')} showLive={recentPoints.some(r => r.kind === 'live')} />
+      <Legend level={inArea ? 'area' : selection.stateCode !== undefined ? 'state' : 'us'}
+        shading={fars && !inArea ? `${selection.stateCode === undefined ? 'States' : 'Counties'} shaded by deaths, ${fars.from === fars.to ? fars.from : `${fars.from}–${fars.to}`}` : null}
+        showCities={!!fars && selection.stateCode !== undefined && !inArea && cities.some(c => c.latitude !== null)}
+        showFatal={!!fars && inArea} showRecords={recentPoints.some(r => r.kind === 'record')} showLive={recentPoints.some(r => r.kind === 'live')} />
       {error && <div className="error">{STATIC ? 'Could not load the map data' : <>Could not load data from <code>{API}</code></>}: {error}</div>}
     </div>
     <SidePanel selection={selection} range={range} fars={fars} states={states} counties={counties} cities={cities} summary={summary}

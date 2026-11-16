@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
 import type { CityRow, Coverage, CountyRow, FlagDef, RecentSource, Selection, StateRow, Summary, TimeRange } from '../api';
 import { FARS_FIRST, FARS_LAST, FIRST_YEAR, THIS_YEAR, ago, fmt, parseTime } from '../api';
@@ -38,11 +39,11 @@ export function SidePanel(p: Props) {
   const place = sel.city ? titleCase(sel.city) : sel.countyName ? `${titleCase(sel.countyName)} County` : sel.stateName ?? 'United States';
 
   return <aside className="panel-side">
-    <nav className="crumbs">
+    {sel.stateCode !== undefined && <nav className="crumbs">
       <button onClick={() => p.onSelect({})} disabled={sel.stateCode === undefined}>United States</button>
       {sel.stateName && <><span>›</span><button onClick={() => p.onSelect({ stateCode: sel.stateCode, stateName: sel.stateName })} disabled={!inArea}>{sel.stateName}</button></>}
       {inArea && <><span>›</span><b>{place}</b></>}
-    </nav>
+    </nav>}
 
     <div className="head">
       <h1>{place}</h1>
@@ -50,8 +51,6 @@ export function SidePanel(p: Props) {
     {p.dataMeta && <p className="muted">Data as of {when(p.dataMeta.generated_at)}</p>}
 
     <TimeControls range={p.range} onRange={p.onRange} />
-
-    <RecentSection recent={p.recent} range={p.range} shownPoints={p.recentPoints} dataMeta={p.dataMeta} inArea={inArea} atUS={sel.stateCode === undefined} onSource={p.onSource} />
 
     {p.fars ? <>
       <h2 className="block-title">Fatal crashes, {p.fars.from === p.fars.to ? p.fars.from : `${p.fars.from}–${p.fars.to}`} <small>NHTSA FARS · all US</small></h2>
@@ -64,7 +63,9 @@ export function SidePanel(p: Props) {
       {p.range.kind === 'live' ? ' Live mode shows incident reports from the last 24 hours instead.' : ' For later years the map shows city crash reports and live incident feeds where they exist (outlined in blue).'}
     </p>}
 
-    {p.loading && <p className="muted">Loading…</p>}
+    <RecentSection key={place} recent={p.recent} range={p.range} shownPoints={p.recentPoints} dataMeta={p.dataMeta} inArea={inArea} atUS={sel.stateCode === undefined} onSource={p.onSource} />
+
+    {p.loading &&<p className="muted">Loading…</p>}
 
     {p.fars && sel.stateCode === undefined && <Ranked title="States with the most deaths" hint="Click a state on the map or below."
       rows={p.states.slice(0, 12).map(s => ({ key: String(s.state_code), label: s.name, value: s.deaths, onClick: () => p.onSelect({ stateCode: s.state_code, stateName: s.name }) }))} />}
@@ -163,8 +164,14 @@ function TimeControls({ range, onRange }: { range: TimeRange; onRange: (r: TimeR
   </div>;
 }
 
+const SHOWN_SOURCES = 4;
+
 function RecentSection({ recent, range, shownPoints, dataMeta, inArea, atUS, onSource }: { recent: RecentSource[]; range: TimeRange; shownPoints: number; dataMeta: Meta | null; inArea: boolean; atUS: boolean; onSource: (s: string) => void }) {
+  const [showAll, setShowAll] = useState(false);
   if (!recent.length) return null;
+  // Nationally there are ~50 sources; listing them all buried everything below.
+  const collapsible = recent.length > SHOWN_SOURCES + 1;
+  const rows = collapsible && !showAll ? recent.slice(0, SHOWN_SOURCES) : recent;
   const live = range.kind === 'live';
   // Static exports keep dots only for the last dot_days; counts still cover every year.
   const dotsCut = dataMeta && range.kind === 'years' && `${range.from}-01-01` < dataMeta.dots_since && (inArea || shownPoints > 0);
@@ -173,7 +180,7 @@ function RecentSection({ recent, range, shownPoints, dataMeta, inArea, atUS, onS
     {dataMeta && live && <p className="muted">Last 24 hours before {when(dataMeta.generated_at)}.</p>}
     {!atUS && <p className="muted">Counted inside the rectangle around this area, so it can include a little of its neighbours.</p>}
     <ul>
-      {recent.map(r => {
+      {rows.map(r => {
         const last = r.last ? parseTime({ time: r.last, kind: r.kind }) : null;
         const body = <>
           <i style={{ background: r.kind === 'live' ? COLORS.live : COLORS.record }} />
@@ -187,6 +194,8 @@ function RecentSection({ recent, range, shownPoints, dataMeta, inArea, atUS, onS
         return <li key={r.source}>{atUS ? <button onClick={() => onSource(r.source)} title="Zoom to this area">{body}</button> : <div className="row">{body}</div>}</li>;
       })}
     </ul>
+    {collapsible && <button className="more" onClick={() => setShowAll(!showAll)}>
+      {showAll ? 'Show fewer' : `Show all ${recent.length} sources`}</button>}
     {(inArea || live) && shownPoints > 0 && <p className="muted">Showing the newest {fmt(shownPoints)} with a location on the map.</p>}
     {!inArea && !live && !atUS && !shownPoints && <p className="muted">Open a county or city to see these as dots.</p>}
     {dotsCut && <p className="muted">Dots: {dataMeta.dot_days === 365 ? 'last 12 months' : `last ${dataMeta.dot_days} days`} only; counts cover the whole range.</p>}
