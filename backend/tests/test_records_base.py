@@ -79,3 +79,18 @@ def test_update_full_then_incremental_with_dedupe(db, tmp_path):
     assert "2026-11-08" in seen[1]  # newest held minus 3-day overlap
     assert db.get(LocalCrash, ("montgomery_md", "B")).severity == "Fatal Crash"
     assert db.scalar(select(func.count()).select_from(LocalCrash)) == 2
+
+
+def test_ckan_keyset_paging(tmp_path):
+    spec = base.SourceSpec(source="t", label="T", platform="ckan", url="https://x/api/3/action/datastore_search_sql",
+                           urls=["res-2026"], id_field="Collision Id", date_field="Crash Date Time", parse=lambda r: r,
+                           states=[6], bbox=(-125, 32, -114, 42), page_size=2)
+    calls = []
+    def get(url):
+        calls.append(parse_qs(urlparse(url).query)["sql"][0])
+        rows = [[{"Collision Id": 1}, {"Collision Id": 2}], [{"Collision Id": 3}]][len(calls) - 1]
+        return {"success": True, "result": {"records": rows}}
+    rows = list(base.iter_raw(base.fetch(spec, datetime(2026, 11, 1), raw_dir=tmp_path, get=get, log=lambda *_: None)))
+    assert [r["Collision Id"] for r in rows] == [1, 2, 3]
+    assert calls[0] == 'SELECT * FROM "res-2026" WHERE ("Crash Date Time" >= \'2026-11-01 00:00:00\') ORDER BY "Collision Id" LIMIT 2'
+    assert '("Collision Id" > 2)' in calls[1]

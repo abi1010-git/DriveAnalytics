@@ -41,14 +41,16 @@ COLUMNS = ("crash_datetime", "latitude", "longitude", "road", "injured", "killed
 class SourceSpec:
     source: str                      # short id stored in local_crashes.source, e.g. "montgomery_md"
     label: str                       # shown in the app, e.g. "Montgomery County, MD crash reports"
-    platform: str                    # "socrata" or "arcgis"
-    url: str                         # Socrata: https://host/resource/xxxx-xxxx.json; ArcGIS: .../FeatureServer/0 (or a list via `urls`)
+    platform: str                    # "socrata", "arcgis" or "ckan"
+    url: str                         # Socrata: https://host/resource/xxxx-xxxx.json; ArcGIS: .../FeatureServer/0 (or a list via `urls`);
+                                     # CKAN: https://host/api/3/action/datastore_search_sql, with resource ids in `urls`
     date_field: str                  # field used for incremental updates and ordering
     parse: Callable[[dict], dict | None]
     states: list[int]                # FIPS state codes covered
     bbox: tuple[float, float, float, float]  # (min_lon, min_lat, max_lon, max_lat), also used to drop bad coordinates
     tz: str = "America/New_York"     # local zone of the publisher (for building date filters)
-    urls: list[str] = field(default_factory=list)  # ArcGIS sources split by year: all layers/services to read
+    urls: list[str] = field(default_factory=list)  # sources split by year: ArcGIS layers/services, or CKAN resource ids
+    id_field: str | None = None      # CKAN only: unique column used for stable paging (e.g. "Collision Id")
     where: str | None = None         # extra server-side filter, e.g. "crash_date >= '2015-01-01'"
     page_size: int = 2000            # ArcGIS servers often cap at 1000-2000; Socrata allows 50000
     overlap: timedelta = timedelta(days=3)  # re-read this much before the newest held record
@@ -161,6 +163,30 @@ def _arcgis_pages(spec: SourceSpec, since: datetime | None, get) -> Iterator[lis
             offset += len(rows)
 
 
+def _ckan_pages(spec: SourceSpec, since: datetime | None, get) -> Iterator[list[dict]]:
+    """CKAN datastore via SQL: one resource per year in `urls`; keyset paging on id_field.
+    Column names are quoted because CKAN tables often contain spaces ("Crash Date Time")."""
+    if not spec.id_field:
+        raise ValueError(f"{spec.source}: CKAN sources need id_field")
+    q = lambda name: '"' + name.replace('"', '""') + '"'  # noqa: E731
+    for resource in spec.urls:
+        after = None
+        while True:
+            where = [w for w in (spec.where,
+                                 f"{q(spec.date_field)} >= '{since:%Y-%m-%d %H:%M:%S}'" if since else None,
+                                 f"{q(spec.id_field)} > {after!r}" if after is not None else None) if w]
+            sql = (f"SELECT * FROM {q(resource)}" + (f" WHERE {' AND '.join(f'({w})' for w in where)}" if where else "")
+                   + f" ORDER BY {q(spec.id_field)} LIMIT {int(spec.page_size)}")
+            body = get(f"{spec.url}?{urllib.parse.urlencode({'sql': sql})}")
+            if not body.get("success"):
+                raise ValueError(f"CKAN error from {spec.url}: {str(body.get('error'))[:200]}")
+            rows = body["result"]["records"]
+            yield rows
+            if len(rows) < spec.page_size:
+                break
+            after = rows[-1][spec.id_field]
+
+
 def raw_path(spec: SourceSpec, since: datetime | None, raw_dir: Path = RAW_DIR) -> Path:
     name = f"updated_since_{since:%Y-%m-%d}.jsonl.gz" if since else "full.jsonl.gz"
     return raw_dir / "records" / spec.source / name
@@ -171,7 +197,7 @@ def fetch(spec: SourceSpec, since: datetime | None = None, *, raw_dir: Path = RA
     dest = raw_path(spec, since, raw_dir)
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_suffix(dest.suffix + ".part")
-    pages = _socrata_pages if spec.platform == "socrata" else _arcgis_pages
+    pages = {"socrata": _socrata_pages, "arcgis": _arcgis_pages, "ckan": _ckan_pages}[spec.platform]
     total = 0
     with gzip.open(part, "wt", encoding="utf-8") as out:
         for page in pages(spec, since, get):
