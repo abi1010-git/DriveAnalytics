@@ -61,3 +61,18 @@ Road ranking groups on `fars_crashes.road_route`, a key the loader derives from 
 - `frontend/src/geo.ts`: loads state and county boundaries from the `us-atlas` package. Counties load lazily (about 800 KB), only when a state is opened.
 - `frontend/src/components/CrashMap.tsx`: the Leaflet map, with shaded states and counties, city bubbles and crash dots.
 - `frontend/src/components/SidePanel.tsx`: breadcrumbs, totals, ranked lists, roads, factors and time of day.
+
+## Recent and live data
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/recent/coverage` | Each non-FARS source: kind (`record` or `live`), label, FIPS states, bounding box |
+| `GET /api/recent/summary?start=&end=&bbox=` | Per-source counts, deaths/injuries where known, and first/last time in the window |
+| `GET /api/recent/points?start=&end=&bbox=` | Newest located crashes and incidents, up to `limit` per table |
+| `GET /api/recent/monthly` | Crashes per month per source |
+| `GET /api/live/sources` | Each live feed's last poll, last error and newest incident |
+| `GET /api/live/incidents?hours=` | Live incidents in the last N hours |
+
+- **Live feeds** are adapters in `backend/pipeline/live/`. They follow the contract in `base.py` and are run by `poller.py`, which upserts into `live_incidents` and records each poll in `live_polls`.
+- **Errors:** a failing feed is recorded and skipped, so it never stops the others.
+- **Bounding boxes:** area filters use a bounding box, so a county's count can include a little of its neighbors. PostGIS (Phase 2) will allow exact boundaries.

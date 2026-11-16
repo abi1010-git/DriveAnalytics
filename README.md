@@ -25,14 +25,25 @@ The goal is a tool anyone can use to look up crash history near an address or al
 
 These are totals, not rates. A busy interstate will rank high partly because so many people drive it, and the app says so.
 
+### Up to now, not just 2024
+
+FARS is the only nationwide crash dataset, and it is published about 1.5 years late. To reach 2026 and today, the map adds local sources wherever they exist:
+
+- **Police crash reports** (blue dots) from NYC and Chicago. These are about a day behind, with injury and death counts.
+- **Live incidents** (purple dots) from six feeds: California Highway Patrol, Washington state highways, 511NJ/TRANSCOM (NJ + NY), Austin, Seattle and San Francisco. These are minutes old, and they are clearly labeled as unverified first reports.
+
+Use the **From/to** years (2012 to now) or **Last 24 hours**. The side panel says which sources cover the area and how fresh each one is. Sources and their limits are listed in [`docs/LIVE_AND_RECENT_SOURCES.md`](docs/LIVE_AND_RECENT_SOURCES.md).
+
 ## Status
 
 | Phase | What | State |
 |---|---|---|
 | 1. Data | Reproducible download + load of FARS and NYC into PostgreSQL, risk-factor flags, tests | **Done** |
 | 3a. Map | State → county/city drill-down, roads ranked by deaths, crash dots with details, factor and time-of-day breakdowns | **Done** |
+| 3b. Recent + live | 2012–2026 time range; NYC + Chicago crash reports; 6 live incident feeds polled every 10 min | **Done** |
 | 2. API | Crashes near a point or route (PostGIS), intersections ranked by severity, year-over-year trends | Next |
-| 3b. UI | Address search, NYC street-level view (all crashes, not just fatal), trends, street-level imagery of a location (Mapillary) | Planned |
+| 3c. More sources | Iowa + Utah statewide, DC, Denver, Nashville and other crash-report portals (researched); free-key 511 feeds (AZ, GA, PA, NY, OH) | Next |
+| 3d. UI | Address search, trends, street-level imagery of a location (Mapillary) | Planned |
 | 4. Deploy | Hosted demo, docs | Planned |
 
 ### What's loaded today (local run, Nov 2026)
@@ -83,6 +94,9 @@ $env:DATABASE_URL = "postgresql+psycopg2://postgres@127.0.0.1:5432/driveanalytic
 python -m pipeline fars --years 2020-2024   # ~170 MB download, a few minutes
 python -m pipeline nyc                       # ~2.3M rows; took ~7 min to download + ~23 min to load here
 python -m pipeline nyc --since 2026-11-01    # later: only rows added or amended since a date
+python -m pipeline chicago                   # ~1.1M Chicago crash reports
+python -m pipeline live --backfill-days 30   # poll the 6 live feeds once (first run fetches 30 days where the feed has history)
+python -m pipeline live --every 10           # keep polling every 10 minutes (leave running)
 
 uvicorn app.main:app --reload
 ```
