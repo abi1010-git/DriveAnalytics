@@ -72,12 +72,24 @@ ol { list-style: none; margin: 0; padding: 0; }
 }
 .dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(0.8) contrast(0.85) saturate(0.6); }
 .road-name small { display: block; font-weight: 400; font-size: 11px; color: var(--muted); }
-.time { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 6px; font-size: 13px; color: var(--muted); }
+.time { margin: 6px 0 10px; font-size: 13px; color: var(--muted); }
+.time .presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.time .presets button { display: flex; gap: 6px; align-items: center; background: var(--bg); border: 1px solid #33445c; border-radius: 16px; padding: 5px 11px; cursor: pointer; color: var(--text); font-size: 12.5px; }
+.time .presets button:hover { border-color: #64748b; }
+.time .presets button.on { border-color: var(--accent); background: #0c2a3d; }
+.time .presets .dot { width: 8px; height: 8px; border-radius: 50%; background: #c084fc; animation: blink 1.4s infinite; }
+.time .custom { display: flex; gap: 12px; margin-top: 8px; }
 .time label { display: flex; gap: 6px; align-items: center; }
-.time .live { margin-left: auto; display: flex; gap: 7px; align-items: center; background: var(--bg); border: 1px solid #33445c; border-radius: 16px; padding: 6px 12px; cursor: pointer; color: var(--text); }
-.time .live.on { border-color: #c084fc; background: #2a1840; }
-.time .live .dot { width: 8px; height: 8px; border-radius: 50%; background: #c084fc; }
-.time .live.on .dot { animation: blink 1.4s infinite; }
+.time .timeline { margin-top: 10px; }
+.time .track { display: grid; grid-template-columns: 118px 1fr; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 11.5px; }
+.time .lane { position: relative; height: 10px; background: #0b1424; border-radius: 3px; }
+.time .lane i { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+.time .lane i.fars { background: #ef4444; opacity: 0.75; }
+.time .lane i.local { background: var(--accent); opacity: 0.35; }
+.time .lane b.sel { position: absolute; top: -3px; bottom: -3px; border: 1.5px solid #f4f7fb; border-radius: 4px; }
+.time .ticks { position: relative; height: 14px; margin-left: 126px; font-size: 10.5px; }
+.time .ticks span { position: absolute; transform: translateX(-50%); }
+.time .status { margin: 6px 0 0; font-size: 12.5px; color: #b6c6db; }
 @keyframes blink { 50% { opacity: 0.25; } }
 .block-title { margin-top: 18px; }
 .block-title small { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 6px; }

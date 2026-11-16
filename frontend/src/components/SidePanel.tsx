@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
 import type { CityRow, Coverage, CountyRow, FlagDef, RecentSource, Selection, StateRow, Summary, TimeRange } from '../api';
-import { FARS_FIRST, FARS_LAST, FIRST_YEAR, THIS_YEAR, ago, fmt, parseTime } from '../api';
+import { FARS_FIRST, FARS_LAST, FIRST_YEAR, THIS_YEAR, ago, farsYears, fmt, parseTime } from '../api';
 import type { Meta } from '../static';
 import { COLORS, titleCase } from './CrashMap';
 
@@ -58,10 +58,7 @@ export function SidePanel(p: Props) {
         <div><strong>{fmt(totals.deaths)}</strong><span>people killed</span></div>
         <div><strong>{fmt(areaCrashes)}</strong><span>fatal crashes</span></div>
       </div>
-    </> : <p className="note">
-      Nationwide fatal-crash data (NHTSA FARS) is published about 1.5 years late, so it covers {FARS_FIRST}–{FARS_LAST} here.
-      {p.range.kind === 'live' ? ' Live mode shows incident reports from the last 24 hours instead.' : ' For later years the map shows city crash reports and live incident feeds where they exist (outlined in blue).'}
-    </p>}
+    </> : null}
 
     <RecentSection key={place} recent={p.recent} range={p.range} shownPoints={p.recentPoints} dataMeta={p.dataMeta} inArea={inArea} atUS={sel.stateCode === undefined} onSource={p.onSource} />
 
@@ -150,17 +147,73 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyl
 const sum = (rows: { crashes: number; deaths: number }[]) => rows.reduce((t, r) => ({ crashes: t.crashes + r.crashes, deaths: t.deaths + r.deaths }), { crashes: 0, deaths: 0 });
 
 
+type Preset = { label: string; range: TimeRange };
+
+const PRESETS: Preset[] = [
+  { label: 'Last 24 hours', range: { kind: 'live' } },
+  { label: `${THIS_YEAR} so far`, range: { kind: 'years', from: THIS_YEAR, to: THIS_YEAR } },
+  { label: String(THIS_YEAR - 1), range: { kind: 'years', from: THIS_YEAR - 1, to: THIS_YEAR - 1 } },
+  { label: `Since ${FARS_FIRST}`, range: { kind: 'years', from: FARS_FIRST, to: THIS_YEAR } },
+];
+
+const sameRange = (a: TimeRange, b: TimeRange) =>
+  a.kind === b.kind && (a.kind === 'live' || (b.kind === 'years' && a.from === b.from && a.to === b.to));
+
+const span = (from: number, to: number) => (from === to ? String(from) : `${from}–${to}`);
+
+/** Presets for the common questions, Custom for anything else, and a small timeline that shows
+ *  which kind of data each year has, so picking 2026 and losing the death totals is no surprise. */
 function TimeControls({ range, onRange }: { range: TimeRange; onRange: (r: TimeRange) => void }) {
+  const preset = PRESETS.find(pr => sameRange(pr.range, range));
+  const [custom, setCustom] = useState(!preset);
   const years = range.kind === 'years' ? range : { from: FARS_FIRST, to: THIS_YEAR };
   const setYears = (from: number, to: number) => onRange({ kind: 'years', from: Math.min(from, to), to: Math.max(from, to) });
+  const fars = farsYears(range);
+
+  // Timeline geometry: one slot per year from FIRST_YEAR to THIS_YEAR.
+  const count = THIS_YEAR - FIRST_YEAR + 1;
+  const pos = (year: number) => `${(100 * (year - FIRST_YEAR)) / count}%`;
+  const width = (from: number, to: number) => `${(100 * (to - from + 1)) / count}%`;
+
+  let status: string;
+  if (range.kind === 'live') status = 'Live incident reports and police reports from the last 24 hours. Death totals are not available this recent.';
+  else if (!fars) status = `Deaths: none yet for ${span(range.from, range.to)} (nationwide data ends ${FARS_LAST}). Showing local police reports only.`;
+  else if (fars.from === range.from && fars.to === range.to) status = `Deaths for ${span(fars.from, fars.to)}, plus local police reports where they exist.`;
+  else status = `Deaths for ${span(fars.from, fars.to)} (the newest nationwide data), plus local police reports for ${span(range.from, range.to)} where they exist.`;
+
   return <div className="time">
-    <label>From <select value={years.from} disabled={range.kind === 'live'} onChange={e => setYears(Number(e.target.value), years.to)}>
-      {YEARS.map(y => <option key={y} value={y}>{y}</option>)}</select></label>
-    <label>to <select value={years.to} disabled={range.kind === 'live'} onChange={e => setYears(years.from, Number(e.target.value))}>
-      {YEARS.map(y => <option key={y} value={y}>{y}</option>)}</select></label>
-    <button className={range.kind === 'live' ? 'live on' : 'live'} onClick={() => onRange(range.kind === 'live' ? { kind: 'years', from: FARS_FIRST, to: THIS_YEAR } : { kind: 'live' })}>
-      <span className="dot" /> Last 24 hours
-    </button>
+    <div className="presets" role="group" aria-label="Time range">
+      {PRESETS.map(pr => <button key={pr.label} className={!custom && preset === pr ? 'on' : ''}
+        onClick={() => { setCustom(false); onRange(pr.range); }}>
+        {pr.range.kind === 'live' && <span className="dot" />}{pr.label}
+      </button>)}
+      <button className={custom ? 'on' : ''} onClick={() => { setCustom(true); if (range.kind === 'live') onRange({ kind: 'years', ...years }); }}>Custom</button>
+    </div>
+
+    {custom && <div className="custom">
+      <label>From <select value={years.from} onChange={e => setYears(Number(e.target.value), years.to)}>
+        {YEARS.map(y => <option key={y} value={y}>{y}</option>)}</select></label>
+      <label>to <select value={years.to} onChange={e => setYears(years.from, Number(e.target.value))}>
+        {YEARS.map(y => <option key={y} value={y}>{y}</option>)}</select></label>
+    </div>}
+
+    {range.kind === 'years' && <div className="timeline" aria-hidden>
+      <div className="track">
+        <span className="label">Deaths, all US</span>
+        <div className="lane"><i className="fars" style={{ left: pos(FARS_FIRST), width: width(FARS_FIRST, FARS_LAST) }} />
+          <b className="sel" style={{ left: pos(range.from), width: width(range.from, range.to) }} /></div>
+      </div>
+      <div className="track">
+        <span className="label">Police reports, local</span>
+        <div className="lane"><i className="local" style={{ left: pos(FIRST_YEAR), width: width(FIRST_YEAR, THIS_YEAR) }} />
+          <b className="sel" style={{ left: pos(range.from), width: width(range.from, range.to) }} /></div>
+      </div>
+      <div className="ticks">
+        {[FIRST_YEAR, FARS_FIRST, THIS_YEAR].map(y => <span key={y} style={{ left: `calc(${pos(y)} + ${50 / count}%)` }}>{y}</span>)}
+      </div>
+    </div>}
+
+    <p className="status">{status}</p>
   </div>;
 }
 
