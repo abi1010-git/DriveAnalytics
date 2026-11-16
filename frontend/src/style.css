@@ -72,12 +72,24 @@ ol { list-style: none; margin: 0; padding: 0; }
 }
 .dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(0.8) contrast(0.85) saturate(0.6); }
 .road-name small { display: block; font-weight: 400; font-size: 11px; color: var(--muted); }
-.time { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 6px; font-size: 13px; color: var(--muted); }
+.time { margin: 6px 0 10px; font-size: 13px; color: var(--muted); }
+.time .presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.time .presets button { display: flex; gap: 6px; align-items: center; background: var(--bg); border: 1px solid #33445c; border-radius: 16px; padding: 5px 11px; cursor: pointer; color: var(--text); font-size: 12.5px; }
+.time .presets button:hover { border-color: #64748b; }
+.time .presets button.on { border-color: var(--accent); background: #0c2a3d; }
+.time .presets .dot { width: 8px; height: 8px; border-radius: 50%; background: #c084fc; animation: blink 1.4s infinite; }
+.time .custom { display: flex; gap: 12px; margin-top: 8px; }
 .time label { display: flex; gap: 6px; align-items: center; }
-.time .live { margin-left: auto; display: flex; gap: 7px; align-items: center; background: var(--bg); border: 1px solid #33445c; border-radius: 16px; padding: 6px 12px; cursor: pointer; color: var(--text); }
-.time .live.on { border-color: #c084fc; background: #2a1840; }
-.time .live .dot { width: 8px; height: 8px; border-radius: 50%; background: #c084fc; }
-.time .live.on .dot { animation: blink 1.4s infinite; }
+.time .timeline { margin-top: 10px; }
+.time .track { display: grid; grid-template-columns: 118px 1fr; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 11.5px; }
+.time .lane { position: relative; height: 10px; background: #0b1424; border-radius: 3px; }
+.time .lane i { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+.time .lane i.fars { background: #ef4444; opacity: 0.75; }
+.time .lane i.local { background: var(--accent); opacity: 0.35; }
+.time .lane b.sel { position: absolute; top: -3px; bottom: -3px; border: 1.5px solid #f4f7fb; border-radius: 4px; }
+.time .ticks { position: relative; height: 14px; margin-left: 126px; font-size: 10.5px; }
+.time .ticks span { position: absolute; transform: translateX(-50%); }
+.time .status { margin: 6px 0 0; font-size: 12.5px; color: #b6c6db; }
 @keyframes blink { 50% { opacity: 0.25; } }
 .block-title { margin-top: 18px; }
 .block-title small { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 6px; }
@@ -93,6 +105,17 @@ ol { list-style: none; margin: 0; padding: 0; }
 .legend:empty { display: none; }
 .legend span { display: flex; align-items: center; gap: 6px; }
 .legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.legend { max-width: calc(100% - 20px); }
+.legend .hint { width: 100%; font-weight: 600; color: #f4f7fb; }
+.legend .scale { flex-direction: column; align-items: flex-start; gap: 2px; }
+.legend .scale small { color: #8fa1b8; font-size: 11px; }
+.legend .ramp { gap: 0; color: #8fa1b8; font-size: 11px; }
+.legend .ramp i { border-radius: 0; width: 16px; height: 9px; }
+.legend .ramp i:first-of-type { margin-left: 5px; border-radius: 2px 0 0 2px; }
+.legend .ramp i:last-of-type { margin-right: 5px; border-radius: 0 2px 2px 0; }
+.legend i.ring { border: 1px solid #0b1120; }
+.recent .more { background: none; border: 1px solid var(--line); color: inherit; border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; width: 100%; margin-top: 2px; }
+.recent .more:hover { border-color: #64748b; }
 .kind { display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; border-radius: 8px; padding: 1px 7px; margin-bottom: 3px; }
 .kind.live { background: #f3e8ff; color: #6b21a8; }
 .kind.record { background: #e0f2fe; color: #075985; }

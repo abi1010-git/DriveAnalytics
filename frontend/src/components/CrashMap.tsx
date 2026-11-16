@@ -52,6 +52,10 @@ type Props = {
 
 export function CrashMap(p: Props) {
   const { selection } = p;
+  // The map prefers canvas for the many shaded areas, but a canvas in the points pane would
+  // cover the whole map and swallow clicks meant for the counties below it. SVG lets clicks on
+  // empty space through (and runs the live-incident pulse animation, which canvas can't).
+  const pointsRenderer = useMemo(() => L.svg({ pane: 'points' }), []);
   const inArea = selection.countyCode !== undefined || !!selection.city;
 
   const stateLayer = useMemo(() => {
@@ -139,14 +143,14 @@ export function CrashMap(p: Props) {
     {/* Points get their own pane so they always draw above the shaded areas. */}
     <Pane name="points" style={{ zIndex: 450 }}>
     {selection.stateCode !== undefined && !inArea && p.cities.filter(c => c.latitude !== null).map(c =>
-      <CircleMarker key={c.name} center={[c.latitude!, c.longitude!]} radius={3 + Math.sqrt(c.deaths) / 2.5}
+      <CircleMarker renderer={pointsRenderer} key={c.name} center={[c.latitude!, c.longitude!]} radius={3 + Math.sqrt(c.deaths) / 2.5}
         pathOptions={{ color: '#0b1120', weight: 1, fillColor: COLORS.city, fillOpacity: 0.8 }} eventHandlers={{ click: () => p.onCity(c.name) }}>
         <Tooltip pane="tooltipPane">{titleCase(c.name)}: {fmt(c.deaths)} deaths</Tooltip>
       </CircleMarker>)}
 
     {inArea && p.crashes.map(c => {
       const dimmed = p.selectedRoad !== null && c.road_route !== p.selectedRoad;
-      return <CircleMarker key={c.id} center={[c.latitude, c.longitude]} radius={3 + 2 * Math.min(c.deaths, 4)}
+      return <CircleMarker renderer={pointsRenderer} key={c.id} center={[c.latitude, c.longitude]} radius={3 + 2 * Math.min(c.deaths, 4)}
         pathOptions={{ color: dimmed ? '#334155' : '#fecaca', weight: dimmed ? 0.5 : 1, fillColor: dimmed ? '#334155' : '#ef4444', fillOpacity: dimmed ? 0.35 : 0.8 }}>
         <Popup pane="popupPane"><CrashDetails crash={c} flagNames={p.flagNames} /></Popup>
       </CircleMarker>;
@@ -155,7 +159,7 @@ export function CrashMap(p: Props) {
     {p.recentPoints.map(r => {
       const live = r.kind === 'live';
       const hurt = (r.killed ?? 0) * 3 + Math.min(r.injured ?? 0, 3);
-      return <CircleMarker key={`${r.source}-${r.id}`} center={[r.lat, r.lon]} radius={live ? 5 : 2.5 + hurt}
+      return <CircleMarker renderer={pointsRenderer} key={`${r.source}-${r.id}`} center={[r.lat, r.lon]} radius={live ? 5 : 2.5 + hurt}
         pathOptions={{ color: live ? '#f5d0fe' : '#bae6fd', weight: live ? 1 : 0.5, fillColor: live ? COLORS.live : COLORS.record,
           fillOpacity: live ? 0.85 : 0.55, opacity: live ? 1 : 0.6, className: live && r.category === 'crash' ? 'pulse' : undefined }}>
         <Popup pane="popupPane"><RecentDetails point={r} label={p.coverage.find(c => c.source === r.source)?.label ?? r.source} /></Popup>
@@ -190,11 +194,23 @@ function RecentDetails({ point, label }: { point: RecentPoint; label: string }) 
   </div>;
 }
 
-export function Legend({ showFatal, showRecords, showLive }: { showFatal: boolean; showRecords: boolean; showLive: boolean }) {
+type LegendProps = { level: 'us' | 'state' | 'area'; shading: string | null; showCities: boolean; showFatal: boolean; showRecords: boolean; showLive: boolean };
+
+/** What the colours and dots mean, plus what to click next. */
+export function Legend(p: LegendProps) {
+  const hint = p.level === 'us' ? 'Click a state to explore it'
+    : p.level === 'state' ? (p.showCities ? 'Click a county, or a city bubble' : 'Click a county')
+    : 'Click a dot for details';
   return <div className="legend">
-    {showFatal && <span><i style={{ background: COLORS.fatal }} />Fatal crash (FARS)</span>}
-    {showRecords && <span><i style={{ background: COLORS.record }} />Police crash report</span>}
-    {showLive && <span><i style={{ background: COLORS.live }} />Live incident</span>}
+    <span className="hint">{hint}</span>
+    {p.shading && <span className="scale">
+      <small>{p.shading}</small>
+      <span className="ramp">fewer {SCALE.map(c => <i key={c} style={{ background: c }} />)} more</span>
+    </span>}
+    {p.showCities && <span><i className="ring" style={{ background: COLORS.city }} />City, sized by deaths</span>}
+    {p.showFatal && <span><i style={{ background: COLORS.fatal }} />Fatal crash (FARS)</span>}
+    {p.showRecords && <span><i style={{ background: COLORS.record }} />Police crash report</span>}
+    {p.showLive && <span><i style={{ background: COLORS.live }} />Live incident</span>}
   </div>;
 }
 
