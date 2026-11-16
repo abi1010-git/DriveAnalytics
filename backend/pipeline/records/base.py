@@ -51,6 +51,7 @@ class SourceSpec:
     tz: str = "America/New_York"     # local zone of the publisher (for building date filters)
     urls: list[str] = field(default_factory=list)  # sources split by year: ArcGIS layers/services, or CKAN resource ids
     id_field: str | None = None      # CKAN only: unique column used for stable paging (e.g. "Collision Id")
+    order_field: str = "OBJECTID"    # ArcGIS only: the layer's object-id field, used to order pages
     where: str | None = None         # extra server-side filter, e.g. "crash_date >= '2015-01-01'"
     page_size: int = 2000            # ArcGIS servers often cap at 1000-2000; Socrata allows 50000
     overlap: timedelta = timedelta(days=3)  # re-read this much before the newest held record
@@ -139,14 +140,14 @@ def _socrata_pages(spec: SourceSpec, since: datetime | None, get) -> Iterator[li
 
 
 def _arcgis_pages(spec: SourceSpec, since: datetime | None, get) -> Iterator[list[dict]]:
-    """Page with resultOffset ordered by OBJECTID; geometry is requested in WGS84 and merged
+    """Page with resultOffset ordered by the object-id field; geometry is requested in WGS84 and merged
     into the attributes as _lon/_lat so parse() sees one flat dict."""
     for layer in spec.urls or [spec.url]:
         where = [w for w in (spec.where, f"{spec.date_field} >= TIMESTAMP '{since:%Y-%m-%d %H:%M:%S}'" if since else None) if w]
         offset = 0
         while True:
             params = {"where": " AND ".join(f"({w})" for w in where) or "1=1", "outFields": "*", "outSR": "4326",
-                      "returnGeometry": "true", "orderByFields": "OBJECTID", "resultOffset": str(offset),
+                      "returnGeometry": "true", "orderByFields": spec.order_field, "resultOffset": str(offset),
                       "resultRecordCount": str(spec.page_size), "f": "json"}
             body = get(f"{layer.rstrip('/')}/query?{urllib.parse.urlencode(params)}")
             if "error" in body:
