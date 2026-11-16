@@ -116,6 +116,16 @@ function App() {
     return () => window.clearInterval(timer);
   }, [range.kind]);
 
+  // Recent data is fetched for a rectangle around the area, which can reach into a neighbouring
+  // state (Michigan's box crosses the lake to Chicago). Keep only sources that cover this state.
+  const coversState = useMemo(() => {
+    const states = new Map(coverage.map(c => [c.source, c.states]));
+    const code = selection.stateCode;
+    return (source: string) => code === undefined || (states.get(source)?.includes(code) ?? true);
+  }, [coverage, selection.stateCode]);
+  const shownRecent = useMemo(() => recent.filter(r => coversState(r.source)), [recent, coversState]);
+  const shownPoints = useMemo(() => recentPoints.filter(r => coversState(r.source)), [recentPoints, coversState]);
+
   const flagNames = useMemo(() => Object.fromEntries(flags.filter(f => f.source === 'fars').map(f => [f.id, f])), [flags]);
   const recentStates = useMemo(() => {
     const out = new Map<number, string[]>();
@@ -126,18 +136,18 @@ function App() {
   return <div className="app">
     <div className="map-wrap">
       <CrashMap selection={selection} farsActive={!!fars} stateFeatures={stateFeatures} countyFeatures={countyFeatures} states={states} counties={counties}
-        cities={cities} crashes={crashes} recentPoints={recentPoints} recentStates={recentStates} coverage={coverage} flagNames={flagNames} selectedRoad={selectedRoad}
+        cities={cities} crashes={crashes} recentPoints={shownPoints} recentStates={recentStates} coverage={coverage} flagNames={flagNames} selectedRoad={selectedRoad}
         onState={(stateCode, stateName) => setSelection({ stateCode, stateName })}
         onCounty={(countyCode, countyName) => setSelection({ stateCode: selection.stateCode, stateName: selection.stateName, countyCode, countyName })}
         onCity={city => setSelection({ stateCode: selection.stateCode, stateName: selection.stateName, city })} />
       <Legend level={inArea ? 'area' : selection.stateCode !== undefined ? 'state' : 'us'}
         shading={fars && !inArea ? `${selection.stateCode === undefined ? 'States' : 'Counties'} shaded by deaths, ${fars.from === fars.to ? fars.from : `${fars.from}–${fars.to}`}` : null}
         showCities={!!fars && selection.stateCode !== undefined && !inArea && cities.some(c => c.latitude !== null)}
-        showFatal={!!fars && inArea} showRecords={recentPoints.some(r => r.kind === 'record')} showLive={recentPoints.some(r => r.kind === 'live')} />
+        showFatal={!!fars && inArea} showRecords={shownPoints.some(r => r.kind === 'record')} showLive={shownPoints.some(r => r.kind === 'live')} />
       {error && <div className="error">{STATIC ? 'Could not load the map data' : <>Could not load data from <code>{API}</code></>}: {error}</div>}
     </div>
     <SidePanel selection={selection} range={range} fars={fars} states={states} counties={counties} cities={cities} summary={summary}
-      recent={recent} recentPoints={recentPoints.length} dataMeta={dataMeta} coverage={coverage} flagNames={flagNames} loading={loading} shownCrashes={crashes.length}
+      recent={shownRecent} recentPoints={shownPoints.length} dataMeta={dataMeta} coverage={coverage} flagNames={flagNames} loading={loading} shownCrashes={crashes.length}
       selectedRoad={selectedRoad} onSelect={setSelection} onRange={setRange} onRoad={setSelectedRoad}
       onSource={source => {
         const state = coverage.find(c => c.source === source)?.states[0];
