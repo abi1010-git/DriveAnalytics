@@ -153,3 +153,30 @@ class LivePoll(Base):
     updated: Mapped[int] = mapped_column(Integer, default=0)
     cleared: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text)
+
+
+class LocalCrash(Base):
+    """Police crash *records* from city or state open-data portals other than NYC (e.g. Chicago).
+
+    Unlike live incidents these are filed reports with injury counts and causes, published
+    days to weeks after the crash. Each portal has its own loader in pipeline/ that maps its
+    fields onto these columns; anything that doesn't fit stays out rather than being guessed.
+    """
+
+    __tablename__ = "local_crashes"
+    source: Mapped[str] = mapped_column(String(32), primary_key=True)  # e.g. "chicago"
+    source_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    crash_datetime: Mapped[datetime] = mapped_column(DateTime, index=True)  # local time of the city, as published
+    latitude: Mapped[float | None] = mapped_column(Float)
+    longitude: Mapped[float | None] = mapped_column(Float)
+    road: Mapped[str | None] = mapped_column(Text)  # street, e.g. "W 63RD ST" or "4400 S KEDZIE AVE"
+    injured: Mapped[int | None] = mapped_column(Integer)  # None when the source doesn't say
+    killed: Mapped[int | None] = mapped_column(Integer)
+    severity: Mapped[str | None] = mapped_column(Text)  # the source's own severity label, e.g. "INCAPACITATING INJURY"
+    primary_cause: Mapped[str | None] = mapped_column(Text)
+    weather: Mapped[str | None] = mapped_column(Text)
+    lighting: Mapped[str | None] = mapped_column(Text)
+    crash_type: Mapped[str | None] = mapped_column(Text)  # e.g. "REAR END", "PEDESTRIAN"
+    hit_and_run: Mapped[bool | None] = mapped_column(Boolean)
+
+    __table_args__ = (Index("ix_local_crashes_lat_lon", "latitude", "longitude"),)
