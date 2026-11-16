@@ -118,5 +118,15 @@ def monthly(db: Session, window: Window, live_crashes_only: bool = True) -> list
     return out
 
 
+def _register_record_specs() -> None:
+    """Crash-record portals describe their own coverage in pipeline/records/sources."""
+    from pipeline.records import all_specs
+    for spec in all_specs().values():
+        SOURCES.setdefault(spec.source, {"kind": "record", "label": spec.label, "states": spec.states, "bbox": spec.bbox})
+
+
+_register_record_specs()
+
+
 def coverage() -> list[dict]:
     return [{"source": key, **{k: v for k, v in meta.items()}} for key, meta in SOURCES.items()]

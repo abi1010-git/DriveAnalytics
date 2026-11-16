@@ -5,6 +5,8 @@
     python -m pipeline nyc --since 2026-11-01     only rows created or updated on/after a date
     python -m pipeline nyc --file path.jsonl.gz   load an already-downloaded file
     python -m pipeline chicago [--since DATE]     download and load Chicago crash records
+    python -m pipeline records                    update every crash-record portal (first run loads full history)
+    python -m pipeline records --source NAME      just one; --full re-reads everything
     python -m pipeline live                       poll every live incident feed once
     python -m pipeline live --every 10            keep polling every 10 minutes
 
@@ -47,6 +49,9 @@ def main(argv: list[str] | None = None) -> None:
     chicago_cmd.add_argument("--since", type=date.fromisoformat, help="only rows updated on/after this date (YYYY-MM-DD)")
     chicago_cmd.add_argument("--file", type=Path, help="load this raw .jsonl.gz instead of downloading")
     chicago_cmd.add_argument("--redownload", action="store_true")
+    records_cmd = commands.add_parser("records", help="load crash-record portals configured in pipeline/records/sources")
+    records_cmd.add_argument("--source", action="append", help="only these sources (default: all)")
+    records_cmd.add_argument("--full", action="store_true", help="re-read full history instead of only recent rows")
     live_cmd = commands.add_parser("live", help="poll live traffic-incident feeds")
     live_cmd.add_argument("--source", action="append", help="only these sources (default: all)")
     live_cmd.add_argument("--every", type=float, metavar="MINUTES", help="keep polling on this interval")
@@ -55,6 +60,23 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     Base.metadata.create_all(engine)
+    if args.command == "records":
+        from . import records
+        from .records.base import update
+        specs = records.all_specs()
+        unknown = set(args.source or []) - set(specs)
+        if unknown:
+            parser.error(f"unknown source(s): {', '.join(sorted(unknown))}; choose from {', '.join(specs)}")
+        for name in args.source or specs:
+            started = time.perf_counter()
+            try:
+                with SessionLocal() as db:
+                    result = update(db, specs[name], full=args.full)
+                print(f"records {name}: {result['loaded']:,} loaded, {result['skipped']:,} skipped, "
+                      f"{result['without_coordinates']:,} without coordinates ({time.perf_counter() - started:.0f}s)")
+            except Exception as exc:  # noqa: BLE001 - one broken portal must not stop the rest
+                print(f"records {name}: FAILED {type(exc).__name__}: {exc}")
+        return
     if args.command == "live":
         from .live import ADAPTERS
         from .live.poller import run

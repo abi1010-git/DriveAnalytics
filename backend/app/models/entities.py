@@ -106,7 +106,7 @@ class IngestRun(Base):
 
     __tablename__ = "ingest_runs"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    source: Mapped[str] = mapped_column(String(8), index=True)
+    source: Mapped[str] = mapped_column(String(32), index=True)
     scope: Mapped[str] = mapped_column(String(60))
     source_url: Mapped[str] = mapped_column(Text)
     rows_loaded: Mapped[int] = mapped_column(Integer)
