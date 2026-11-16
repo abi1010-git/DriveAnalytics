@@ -2,13 +2,13 @@ services:
   db:
     image: postgres:17
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-safedrive}
-      POSTGRES_USER: ${POSTGRES_USER:-safedrive}
+      POSTGRES_DB: ${POSTGRES_DB:-driveanalytics}
+      POSTGRES_USER: ${POSTGRES_USER:-driveanalytics}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-safedrive} -d ${POSTGRES_DB:-safedrive}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-driveanalytics} -d ${POSTGRES_DB:-driveanalytics}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -16,10 +16,12 @@ services:
   backend:
     build: ./backend
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-safedrive}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-safedrive}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-driveanalytics}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-driveanalytics}
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - raw_data:/app/data/raw
     ports:
       - "8000:8000"
 
@@ -35,3 +37,4 @@ services:
 
 volumes:
   postgres_data:
+  raw_data:

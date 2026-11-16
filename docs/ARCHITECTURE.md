@@ -1,28 +1,42 @@
-# SafeDrive Architecture
-
-SafeDrive is an educational portfolio project that processes entirely synthetic telemetry. PostgreSQL is the primary application and benchmarking database; SQLite remains useful for lightweight development and tests.
+# Architecture
 
 ```mermaid
 flowchart TD
-    A[Synthetic Telemetry] --> B[Parquet]
-    B --> C[PySpark batch pipeline]
-    D[YAML Safety Rules] --> E[Rule Engine]
-    A --> E
-    C --> F[Aggregations]
-    E --> G[Triggered Evaluations]
-    F --> H[(PostgreSQL)]
-    G --> H
-    H --> I[FastAPI]
-    I --> J[React + TypeScript dashboard]
+    A[NHTSA FARS yearly zips] -->|pipeline/fars.py| C[Parse + clean]
+    B[NYC Open Data SODA API] -->|pipeline/nyc.py, keyset paging| R[Raw cache .jsonl.gz]
+    R --> C
+    Y[config/risk_flags.yaml] --> E[Rule engine]
+    C --> E
+    C --> P[(PostgreSQL)]
+    E -->|crash_flags| P
+    P --> F[FastAPI]
+    F --> W[React + TypeScript]
 ```
 
-## Components and data flow
+## Tables
 
-- Synthetic generators create deterministic telemetry and safety-event data for development and analysis.
-- PySpark reads raw Parquet, validates and enriches telemetry, performs vehicle-level window analysis, and writes processed and aggregate Parquet outputs. Selected summaries can be loaded into PostgreSQL.
-- The YAML safety-rule engine validates a small whitelist-based rule format, evaluates telemetry without executable expressions, and records triggered evaluations with evidence.
-- PostgreSQL stores application entities, Spark summaries, and rule evaluations. SQLite is the fallback used by lightweight tests.
-- FastAPI exposes metrics, events, telemetry, Spark summaries, rules, and evaluation details.
-- React + TypeScript presents the engineering dashboard and investigation views without replacing the underlying data-processing systems.
+| Table | One row per | Notes |
+|---|---|---|
+| `fars_crashes` | fatal US crash | Key `"{year}-{ST_CASE}"`; vehicle-level speeding/drinking/speed limit rolled up per crash |
+| `nyc_crashes` | NYC crash | Key `collision_id` from the source |
+| `nyc_crash_factors` | contributing factor per vehicle | Separate table so "why" questions are a `GROUP BY` |
+| `crash_flags` | (source, crash, flag) | Risk flags from the YAML rules |
+| `ingest_runs` | load run | What was loaded, from which URL, when, and how many rows were skipped |
 
-Spark is intentionally a separate local batch workflow; it is not required to run the core API and is not included in the application Compose services.
+Both crash tables have a `(latitude, longitude)` B-tree index, which is enough for bounding-box filters. Phase 2 adds PostGIS for distance queries such as "within 500 m of this address" and measures whether its spatial index actually helps before claiming it does.
+
+## Pipeline design choices
+
+- **Plain Python instead of PySpark.** The earlier synthetic version used PySpark. These loads are small for Spark: about 190k FARS crashes for five years, and 2.3M NYC rows read in a stream of 2,000-row batches. Spark would add a JVM and Hadoop setup on Windows without making the load meaningfully faster or simpler, so it was removed. If a later feature needs heavy aggregation over all years of FARS person and vehicle files, Spark can return there.
+- **Download, then load.** Raw files are cached under `backend/data/raw/` (git-ignored). Loads can be repeated offline and are idempotent: a FARS year is replaced in one transaction, and NYC rows are upserted.
+- **Database-agnostic SQL** through SQLAlchemy. PostgreSQL is the real target. Tests run on SQLite with small fixture files built in the test, so CI never downloads anything.
+
+## API (Phase 1)
+
+| Endpoint | Returns |
+|---|---|
+| `GET /health` | `{"status": "ok"}` |
+| `GET /api/datasets` | What is loaded: FARS crashes and deaths per year, NYC row count, date range and share with coordinates, last load time |
+| `GET /api/risk-flags` | Every flag definition with the number of crashes it matched |
+| `GET /api/fars/crashes` | Filters: `year`, `state_code`, `flag`, `bbox=min_lon,min_lat,max_lon,max_lat`, `limit` |
+| `GET /api/nyc/crashes` | Filters: `borough`, `start`, `end`, `flag`, `bbox`, `limit`; includes contributing factors |

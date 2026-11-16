@@ -1,37 +1,74 @@
+// Phase 1 page: shows what real data is loaded and how often each risk flag occurs.
+// The map, address search, rankings and trends arrive in Phase 3.
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer } from 'recharts';
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import './style.css';
 
 const API = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
-type Event = { id:number; vehicle_id:number; timestamp:string; event_type:string; severity:string; software_version:string; route_id:string; description:string };
-type Summary = { total_vehicles:number; total_safety_events:number; hard_braking_count:number; sensor_failure_count:number; events_by_severity:Record<string,number>; events_by_event_type:Record<string,number>; events_by_software_version:Record<string,number> };
-type FleetSummary = { vehicle_id:number; telemetry_record_count:number; average_speed:number; max_speed:number; hard_braking_count:number; rapid_acceleration_count:number; sensor_failure_count:number };
-type Evaluation = { id:number; vehicle_id:number; timestamp:string; rule_name:string; severity:string; route_id:string; software_version:string; evidence:{field:string;operator:string;threshold:unknown;observed:unknown}[] };
-const chart = (values:Record<string,number>) => Object.entries(values).map(([name,value]) => ({ name, value }));
+
+type FarsYear = { year: number; crashes: number; fatalities: number };
+type Datasets = {
+  fars: { name: string; coverage: string; years: FarsYear[]; last_loaded: string | null };
+  nyc: { name: string; coverage: string; crashes: number; with_coordinates: number; first_crash: string | null; last_crash: string | null; last_loaded: string | null };
+};
+type Flag = { id: string; name: string; description: string; source: 'fars' | 'nyc'; category: string; crashes_flagged: number };
+
+const fmt = (n: number) => n.toLocaleString();
+const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString() : '—');
 
 function App() {
-  const [summary,setSummary] = useState<Summary|null>(null), [events,setEvents] = useState<Event[]>([]), [fleet,setFleet] = useState<FleetSummary[]>([]), [evaluations,setEvaluations] = useState<Evaluation[]>([]), [selected,setSelected] = useState<Event|null>(null), [severity,setSeverity] = useState(''), [error,setError] = useState<string|null>(null);
+  const [data, setData] = useState<Datasets | null>(null);
+  const [flags, setFlags] = useState<Flag[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
   const load = () => {
-    setError(null); setSummary(null);
-    const json = (response:Response) => { if (!response.ok) throw Error(`Request failed (${response.status})`); return response.json(); };
-    Promise.all([fetch(`${API}/api/metrics/summary`).then(json), fetch(`${API}/api/events`).then(json), fetch(`${API}/api/analytics/fleet-summary`).then(json), fetch(`${API}/api/safety/evaluations`).then(json)])
-      .then(([metrics, eventRows, fleetRows, evaluationRows]) => { setSummary(metrics); setEvents(eventRows); setFleet(fleetRows); setEvaluations(evaluationRows); })
-      .catch(reason => setError(reason instanceof Error ? reason.message : 'Unable to load analytics'));
+    setError(null);
+    const json = (r: Response) => { if (!r.ok) throw Error(`Request failed (${r.status})`); return r.json(); };
+    Promise.all([fetch(`${API}/api/datasets`).then(json), fetch(`${API}/api/risk-flags`).then(json)])
+      .then(([datasets, flagRows]) => { setData(datasets); setFlags(flagRows); })
+      .catch(reason => setError(reason instanceof Error ? reason.message : 'Unable to load data'));
   };
   useEffect(load, []);
-  const shown = events.filter(event => !severity || event.severity === severity);
-  return <main><SafetyEvaluations evaluations={evaluations}/>
-    <header><div><span className="eyebrow">SAFEDRIVE / ENGINEERING ANALYTICS</span><h1>Safety operations console</h1><p>Simulated fleet telemetry and event intelligence.</p></div><span className="badge">● SYNTHETIC DATA</span></header>
-    {error ? <section><p>Unable to load analytics from <code>{API}</code>: {error}</p><button onClick={load}>Retry</button></section> : !summary ? <p>Loading analytics…</p> : <>
-      <section className="cards">{[['Fleet vehicles',summary.total_vehicles],['Safety events',summary.total_safety_events],['Critical events',summary.events_by_severity.CRITICAL||0],['Hard braking',summary.hard_braking_count],['Sensor failures',summary.sensor_failure_count]].map(([name,value]) => <article key={String(name)}><small>{name}</small><strong>{value}</strong><span>Current dataset</span></article>)}</section>
-      <section className="charts"><Panel title="Events by severity"><BarChart data={chart(summary.events_by_severity)}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name"/><YAxis/><Tooltip/><Bar dataKey="value" fill="#f59e0b"/></BarChart></Panel><Panel title="Event type distribution"><BarChart data={chart(summary.events_by_event_type)}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name" angle={-18} textAnchor="end" height={55}/><YAxis/><Tooltip/><Bar dataKey="value" fill="#38bdf8"/></BarChart></Panel><Panel title="Software versions"><BarChart data={chart(summary.events_by_software_version)}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name"/><YAxis/><Tooltip/><Bar dataKey="value" fill="#a78bfa"/></BarChart></Panel></section>
-      <section className="spark-summary"><div className="section-head"><div><span className="eyebrow">PYSPARK BATCH SUMMARY</span><h2>Fleet telemetry health</h2></div><span className="badge">AGGREGATE DATA</span></div>{fleet.length ? <table><thead><tr><th>Vehicle</th><th>Records</th><th>Avg speed</th><th>Max speed</th><th>Sensor failures</th></tr></thead><tbody>{fleet.slice(0,10).map(row => <tr key={row.vehicle_id}><td>SD-{String(row.vehicle_id).padStart(3,'0')}</td><td>{row.telemetry_record_count.toLocaleString()}</td><td>{row.average_speed.toFixed(1)} mph</td><td>{row.max_speed.toFixed(1)} mph</td><td>{row.sensor_failure_count}</td></tr>)}</tbody></table> : <p>Run the PySpark pipeline to populate aggregate summaries.</p>}</section>
-      <section className="investigate"><div className="section-head"><div><span className="eyebrow">EVENT INVESTIGATION</span><h2>Recent safety events</h2></div><select value={severity} onChange={event => setSeverity(event.target.value)}><option value="">All severities</option>{['LOW','MEDIUM','HIGH','CRITICAL'].map(value => <option key={value}>{value}</option>)}</select></div><table><thead><tr><th>Timestamp</th><th>Vehicle</th><th>Event type</th><th>Severity</th><th>Version</th><th>Route</th></tr></thead><tbody>{shown.slice(0,100).map(event => <tr key={event.id} onClick={() => setSelected(event)}><td>{new Date(event.timestamp).toLocaleString()}</td><td>SD-{String(event.vehicle_id).padStart(3,'0')}</td><td>{event.event_type}</td><td><span className={'severity '+event.severity.toLowerCase()}>{event.severity}</span></td><td>{event.software_version}</td><td>{event.route_id}</td></tr>)}</tbody></table></section>
-    </>}
-    {selected && <aside><button onClick={() => setSelected(null)}>×</button><span className="eyebrow">EVENT {selected.id}</span><h2>{selected.event_type}</h2><p>{selected.description}</p><dl><dt>Severity</dt><dd>{selected.severity}</dd><dt>Vehicle</dt><dd>SD-{String(selected.vehicle_id).padStart(3,'0')}</dd><dt>Timestamp</dt><dd>{new Date(selected.timestamp).toLocaleString()}</dd><dt>Route / Version</dt><dd>{selected.route_id} / {selected.software_version}</dd></dl><div className="telemetry-note">Nearby telemetry is available through <code>/api/events/{selected.id}</code>.</div></aside>}
+
+  if (error) return <main><p>Could not reach the API at <code>{API}</code>: {error}</p><button onClick={load}>Retry</button></main>;
+  if (!data) return <main><p>Loading…</p></main>;
+
+  const farsTotal = data.fars.years.reduce((sum, y) => sum + y.crashes, 0);
+  const farsDeaths = data.fars.years.reduce((sum, y) => sum + y.fatalities, 0);
+  const years = data.fars.years.map(y => y.year);
+  return <main>
+    <header>
+      <div><span className="eyebrow">DRIVEANALYTICS</span><h1>US crash data explorer</h1>
+        <p>Real crash records from NHTSA (every fatal US crash) and NYC Open Data (every police-reported crash in New York City).</p></div>
+      <span className="badge">PHASE 1 · DATA LOADED</span>
+    </header>
+
+    <section className="cards">
+      <article><small>US fatal crashes</small><strong>{fmt(farsTotal)}</strong><span>{years.length ? `${years[0]}–${years[years.length - 1]}` : 'not loaded'}</span></article>
+      <article><small>People killed (US)</small><strong>{fmt(farsDeaths)}</strong><span>FARS</span></article>
+      <article><small>NYC crashes</small><strong>{fmt(data.nyc.crashes)}</strong><span>{day(data.nyc.first_crash)} – {day(data.nyc.last_crash)}</span></article>
+      <article><small>NYC crashes with a location</small><strong>{data.nyc.crashes ? `${Math.round(100 * data.nyc.with_coordinates / data.nyc.crashes)}%` : '—'}</strong><span>{fmt(data.nyc.with_coordinates)} mappable</span></article>
+    </section>
+
+    <section className="charts one">
+      <article className="panel"><h3>Fatal crashes per year, United States (FARS)</h3>
+        <ResponsiveContainer width="100%" height={240}>
+          <BarChart data={data.fars.years}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="year" /><YAxis /><Tooltip formatter={v => fmt(Number(v))} /><Bar dataKey="crashes" name="Fatal crashes" fill="#38bdf8" /></BarChart>
+        </ResponsiveContainer>
+      </article>
+    </section>
+
+    {(['fars', 'nyc'] as const).map(source => <section className="investigate" key={source}>
+      <div className="section-head"><div><span className="eyebrow">RISK FLAGS · {source === 'fars' ? 'US FATAL CRASHES' : 'NEW YORK CITY'}</span>
+        <h2>What was recorded about these crashes</h2></div></div>
+      <table><thead><tr><th>Flag</th><th>Category</th><th>Crashes</th><th>How it is defined</th></tr></thead>
+        <tbody>{flags.filter(f => f.source === source).sort((a, b) => b.crashes_flagged - a.crashes_flagged).map(f =>
+          <tr key={f.id}><td>{f.name}</td><td>{f.category.replace(/_/g, ' ')}</td><td>{fmt(f.crashes_flagged)}</td><td className="muted">{f.description}</td></tr>)}</tbody></table>
+    </section>)}
+
+    <p className="footnote">A flag records what police reported about a crash; it does not establish cause. Sources: NHTSA FARS national files; NYC Open Data dataset h9gi-nx95.</p>
   </main>;
 }
-function Panel({ title, children }: { title:string; children:any }) { return <article className="panel"><h3>{title}</h3><ResponsiveContainer width="100%" height={220}>{children}</ResponsiveContainer></article>; }
-function SafetyEvaluations({ evaluations }: { evaluations: Evaluation[] }) { const [severity,setSeverity] = useState(''); const [selected,setSelected] = useState<Evaluation|null>(null); const shown = evaluations.filter(item => !severity || item.severity === severity); return <section className="spark-summary"><div className="section-head"><div><span className="eyebrow">SAFETY RULE ENGINE</span><h2>Triggered evaluations</h2></div><select value={severity} onChange={event => setSeverity(event.target.value)}><option value="">All severities</option>{['LOW','MEDIUM','HIGH','CRITICAL'].map(value => <option key={value}>{value}</option>)}</select></div>{shown.length ? <table><thead><tr><th>Timestamp</th><th>Vehicle</th><th>Rule</th><th>Severity</th><th>Route</th><th>Version</th></tr></thead><tbody>{shown.slice(0,20).map(evaluation => <tr key={evaluation.id} onClick={() => setSelected(evaluation)}><td>{new Date(evaluation.timestamp).toLocaleString()}</td><td>SD-{String(evaluation.vehicle_id).padStart(3,'0')}</td><td>{evaluation.rule_name}</td><td><span className={'severity '+evaluation.severity.toLowerCase()}>{evaluation.severity}</span></td><td>{evaluation.route_id}</td><td>{evaluation.software_version}</td></tr>)}</tbody></table> : <p>No triggered rule evaluations found.</p>}{selected && <div className="telemetry-note"><strong>Safety Evaluation:</strong> {selected.rule_name} ({selected.severity})<br/>Vehicle SD-{String(selected.vehicle_id).padStart(3,'0')} · {new Date(selected.timestamp).toLocaleString()}<br/>{selected.evidence.map((item,index) => <span key={index}><br/>{item.field} {item.operator} {String(item.threshold)} — observed {String(item.observed)}</span>)}</div>}</section>; }
-createRoot(document.getElementById('root')!).render(<App/>);
+
+createRoot(document.getElementById('root')!).render(<App />);

@@ -1,0 +1,145 @@
+# Risk-factor flags attached to crashes at load time.
+#
+# Each rule reads fields that the source actually records. Codes for FARS come from the
+# FARS 2020-2024 national CSV files (the *NAME columns in accident.csv give their meaning).
+# NYC factor labels are the values NYPD uses in contributing_factor_vehicle_1..5,
+# after the loader merges spelling variants (see pipeline/nyc.py).
+#
+# A flag says what was recorded about a crash. It does not say what caused it.
+# Edit this file, then re-run the loaders to recompute flags (they read the local raw cache).
+rules:
+  # ---- FARS: every fatal crash in the US ----
+  - id: fars_speeding
+    name: Speeding involved
+    description: At least one driver was coded as speeding (racing, over the limit, too fast for conditions, or speeding of unknown type). From vehicle.csv SPEEDREL codes 2-5.
+    source: fars
+    category: behavior
+    conditions:
+      - {field: speeding_involved, operator: eq, value: true}
+  - id: fars_drinking_driver
+    name: Drinking driver
+    description: At least one driver was reported as drinking (vehicle.csv DR_DRINK = 1). This is police-reported, not a test result.
+    source: fars
+    category: behavior
+    conditions:
+      - {field: drinking_driver_involved, operator: eq, value: true}
+  - id: fars_dark_unlit
+    name: Dark, no street lighting
+    description: Light condition coded as "Dark - Not Lighted" (LGT_COND 2).
+    source: fars
+    category: environment
+    conditions:
+      - {field: light_code, operator: eq, value: 2}
+  - id: fars_adverse_weather
+    name: Adverse weather
+    description: Rain, sleet or hail, snow, fog or smoke, severe crosswinds, blowing sand, blowing snow, or freezing rain (WEATHER 2-7, 11, 12).
+    source: fars
+    category: environment
+    conditions:
+      - {field: weather_code, operator: in, value: [2, 3, 4, 5, 6, 7, 11, 12]}
+  - id: fars_intersection
+    name: At or near an intersection
+    description: Relation to junction coded as "Intersection" or "Intersection-Related" (RELJCT2 2 or 3).
+    source: fars
+    category: road
+    conditions:
+      - {field: junction_code, operator: in, value: [2, 3]}
+  - id: fars_high_speed_road
+    name: Road with a 55+ mph limit
+    description: The highest posted speed limit among the crash's vehicles was 55 mph or more.
+    source: fars
+    category: road
+    conditions:
+      - {field: max_speed_limit_mph, operator: gte, value: 55}
+  - id: fars_non_motorist
+    name: Pedestrian or other non-motorist involved
+    description: At least one person not in a motor vehicle (pedestrian, cyclist, etc.) was involved (ACCIDENT PEDS > 0).
+    source: fars
+    category: vulnerable_road_user
+    conditions:
+      - {field: pedestrians, operator: gt, value: 0}
+  - id: fars_late_night
+    name: Late night (midnight-5am)
+    description: Crash hour between 0:00 and 4:59.
+    source: fars
+    category: environment
+    conditions:
+      - {field: hour, operator: in, value: [0, 1, 2, 3, 4]}
+  - id: fars_multiple_fatalities
+    name: Multiple deaths
+    description: Two or more people died.
+    source: fars
+    category: outcome
+    conditions:
+      - {field: fatalities, operator: gte, value: 2}
+
+  # ---- NYC: every police-reported crash in New York City ----
+  - id: nyc_unsafe_speed
+    name: Unsafe speed
+    description: A contributing factor for any vehicle was "Unsafe Speed".
+    source: nyc
+    category: behavior
+    conditions:
+      - {field: contributing_factors, operator: contains_any, value: ["Unsafe Speed"]}
+  - id: nyc_alcohol_or_drugs
+    name: Alcohol or drug involvement
+    description: A contributing factor was alcohol, illegal drugs, cannabis, or drug involvement.
+    source: nyc
+    category: behavior
+    conditions:
+      - {field: contributing_factors, operator: contains_any, value: ["Alcohol Involvement", "Drugs (Illegal)", "Cannabis involvement", "Drug involvement"]}
+  - id: nyc_distraction
+    name: Distraction
+    description: A contributing factor was inattention, a phone or device, passengers, or something outside the car.
+    source: nyc
+    category: behavior
+    conditions:
+      - field: contributing_factors
+        operator: contains_any
+        value: ["Driver Inattention/Distraction", "Passenger Distraction", "Outside Car Distraction", "Cell Phone (Hand-Held)", "Cell Phone (hands-free)", "Texting", "Other Electronic Device", "Using On Board Navigation Device", "Eating or Drinking", "Listening/Using Headphones"]
+  - id: nyc_right_of_way
+    name: Failure to yield or signal ignored
+    description: A contributing factor was "Failure to Yield Right-of-Way" or "Traffic Control Disregarded".
+    source: nyc
+    category: behavior
+    conditions:
+      - {field: contributing_factors, operator: contains_any, value: ["Failure to Yield Right-of-Way", "Traffic Control Disregarded"]}
+  - id: nyc_fatigue
+    name: Fatigue
+    description: A contributing factor was "Fatigued/Drowsy" or "Fell Asleep".
+    source: nyc
+    category: behavior
+    conditions:
+      - {field: contributing_factors, operator: contains_any, value: ["Fatigued/Drowsy", "Fell Asleep"]}
+  - id: nyc_pedestrian_harmed
+    name: Pedestrian injured or killed
+    description: At least one pedestrian was injured or killed.
+    source: nyc
+    category: vulnerable_road_user
+    match: any
+    conditions:
+      - {field: pedestrians_injured, operator: gt, value: 0}
+      - {field: pedestrians_killed, operator: gt, value: 0}
+  - id: nyc_cyclist_harmed
+    name: Cyclist injured or killed
+    description: At least one cyclist was injured or killed.
+    source: nyc
+    category: vulnerable_road_user
+    match: any
+    conditions:
+      - {field: cyclists_injured, operator: gt, value: 0}
+      - {field: cyclists_killed, operator: gt, value: 0}
+  - id: nyc_fatal
+    name: Fatal
+    description: At least one person was killed.
+    source: nyc
+    category: outcome
+    conditions:
+      - {field: persons_killed, operator: gt, value: 0}
+  - id: nyc_late_night
+    name: Late night (midnight-5am)
+    description: Crash time between 0:00 and 4:59.
+    source: nyc
+    category: environment
+    conditions:
+      - {field: hour, operator: in, value: [0, 1, 2, 3, 4]}
