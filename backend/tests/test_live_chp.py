@@ -95,3 +95,15 @@ def test_chp_poll_clears_incidents_that_leave_the_feed(db):
     assert db.get(LiveIncident, ("chp", "SACC-261115SA0001")).status == "active"
     gone = db.get(LiveIncident, ("chp", "GGCC-261115SA0001"))
     assert (gone.status, gone.cleared_at) == ("cleared", NOW + timedelta(minutes=5))
+
+
+def test_chp_retries_a_half_written_file(monkeypatch):
+    import xml.etree.ElementTree as ET
+
+    import pytest
+    monkeypatch.setattr(chp, "RETRY_DELAY", 0)
+    full = '<State><Center ID="SAHB"><Dispatch ID="SACC"></Dispatch></Center></State>'
+    replies = iter([full[:30], full])
+    assert chp.fetch(None, lambda url: next(replies)) == []
+    with pytest.raises(ET.ParseError):
+        chp.fetch(None, lambda url: full[:30])

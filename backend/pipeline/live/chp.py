@@ -16,6 +16,7 @@ dispatch system, statewide, refreshed about every minute. No key. Checked Nov 20
   landmark ("WB 50 AT SHINGLE SPRINGS"), Area the CHP area office ("Placerville")
 """
 import re
+import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
@@ -86,8 +87,20 @@ def records(xml_text: str) -> list[dict]:
     return rows
 
 
+RETRY_DELAY = 5  # seconds
+
+
 def fetch(since, get) -> list[dict]:
-    return records(get(URL))
+    """CHP rewrites sa.xml in place, so a request can catch it half-written (seen on ~6 in 10
+    polls on Nov 16, 2026: "unclosed token"). Retry a few times; a truncated file must never be
+    parsed partially, because as a snapshot feed that would mark the missing incidents cleared."""
+    for attempt in range(3):
+        try:
+            return records(get(URL))
+        except ET.ParseError:
+            if attempt == 2:
+                raise
+            time.sleep(RETRY_DELAY * (attempt + 1))
 
 
 def parse(raw: dict) -> dict | None:
