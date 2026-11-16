@@ -1,3 +1,4 @@
+import json
 import types
 from datetime import datetime, timedelta
 from urllib.parse import parse_qs, urlparse
@@ -41,7 +42,7 @@ def test_austin_pages_and_overlap():
     calls = []
     def get(url):
         calls.append(parse_qs(urlparse(url).query))
-        return [austin_row(f"A{i}") for i in range(austin.PAGE if len(calls) == 1 else 3)]
+        return json.dumps([austin_row(f"A{i}") for i in range(austin.PAGE if len(calls) == 1 else 3)])
     rows = austin.fetch(datetime(2026, 11, 16, 5, 0), get)
     assert len(rows) == austin.PAGE + 3 and [c["$offset"] for c in calls] == [["0"], [str(austin.PAGE)]]
     assert "'2026-11-16T03:00:00'" in calls[0]["$where"][0]  # two-hour overlap before `since`
@@ -53,7 +54,7 @@ def test_poll_inserts_then_updates_and_resumes(db):
     seen_where = []
     def get(url):
         seen_where.append(parse_qs(urlparse(url).query).get("$where", [""])[0])
-        return pages[len(seen_where) - 1]
+        return json.dumps(pages[len(seen_where) - 1])
 
     first = poll_source(db, austin, now=NOW, get=get)
     assert (first.fetched, first.inserted, first.updated, first.error) == (2, 2, 0, None)
@@ -101,8 +102,8 @@ def test_live_api(db, monkeypatch):
     from app.main import app
     from app.routes import live as live_routes
 
-    poll_source(db, austin, now=NOW, get=lambda url: [austin_row("A1"), austin_row("A2", issue="Traffic Hazard"),
-                                                     austin_row("OLD", published="2026-11-10T00:00:00.000Z", updated="2026-11-10T01:00:00.000Z")])
+    poll_source(db, austin, now=NOW, get=lambda url: json.dumps([austin_row("A1"), austin_row("A2", issue="Traffic Hazard"),
+                                                     austin_row("OLD", published="2026-11-10T00:00:00.000Z", updated="2026-11-10T01:00:00.000Z")]))
     monkeypatch.setattr(live_routes, "_now", lambda: NOW)
     app.dependency_overrides[get_db] = lambda: db
     try:

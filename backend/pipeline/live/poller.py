@@ -1,5 +1,4 @@
 """Poll live feeds and upsert their incidents into live_incidents."""
-import json
 import time
 import traceback
 import urllib.request
@@ -14,10 +13,10 @@ from ..common import USER_AGENT, batched, utcnow
 from .base import CATEGORIES, FIELDS
 
 
-def get_json(url: str, timeout: int = 60):
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+def get_text(url: str, timeout: int = 60) -> str:
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.load(response)
+        return response.read().decode(response.headers.get_content_charset() or "utf-8", errors="replace")
 
 
 def _since(db: Session, source: str, backfill: timedelta, now: datetime) -> datetime:
@@ -26,7 +25,7 @@ def _since(db: Session, source: str, backfill: timedelta, now: datetime) -> date
     return newest or now - backfill
 
 
-def poll_source(db: Session, adapter, *, now: datetime | None = None, backfill: timedelta = timedelta(days=7), get=get_json) -> LivePoll:
+def poll_source(db: Session, adapter, *, now: datetime | None = None, backfill: timedelta = timedelta(days=7), get=get_text) -> LivePoll:
     """Fetch one source once and upsert. Errors are recorded on the poll row, not raised, so
     one broken feed never stops the others."""
     now = now or utcnow()

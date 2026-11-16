@@ -8,6 +8,7 @@ Fed from the Combined Transportation, Emergency & Communications Center (CTECC);
 - issue_reported is free text from several agencies, e.g. "Crash Urgent", "COLLISION",
   "COLLISN/ LVNG SCN", "AUTO/ PED", "Traffic Hazard", "zSTALLED VEHICLE"
 """
+import json
 import re
 import urllib.parse
 from datetime import datetime, timedelta
@@ -47,10 +48,10 @@ def page_url(since: datetime | None, offset: int) -> str:
     return f"{URL}?{urllib.parse.urlencode(params)}"
 
 
-def fetch(since, get_json) -> list[dict]:
+def fetch(since, get) -> list[dict]:
     rows, offset = [], 0
     while True:
-        page = get_json(page_url(since, offset))
+        page = json.loads(get(page_url(since, offset)))
         rows.extend(page)
         if len(page) < PAGE:
             return rows

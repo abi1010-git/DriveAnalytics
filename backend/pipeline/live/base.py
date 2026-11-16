@@ -7,9 +7,10 @@ An adapter is a module (see pipeline/live/austin.py) that provides:
     SNAPSHOT True if each fetch returns *all currently active* incidents (typical for 511
              feeds): anything missing from a fetch is then marked cleared. False if the feed
              is incremental and reports status itself (Austin).
-    fetch(since, get_json) -> list[dict]
-             Raw records changed since `since` (UTC, or None on the first run). Must only use
-             the injected get_json(url) for HTTP, so tests can run offline.
+    fetch(since, get) -> list[dict]
+             Raw records changed since `since` (UTC; snapshot feeds get None). Must only use
+             the injected get(url) -> str (response body as text) for HTTP, so tests can run
+             offline. Parse JSON/XML/RSS inside the adapter.
     parse(raw) -> dict | None
              One raw record -> a LiveIncident dict (keys below), or None to skip it.
 """
@@ -27,7 +28,7 @@ class Adapter(Protocol):
     LABEL: str
     SNAPSHOT: bool
 
-    def fetch(self, since: datetime | None, get_json: Callable[[str], object]) -> list[dict]: ...
+    def fetch(self, since: datetime | None, get: Callable[[str], str]) -> list[dict]: ...
 
     def parse(self, raw: dict) -> dict | None: ...
 
